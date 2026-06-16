@@ -19,7 +19,7 @@ import {
 import { sanitizeCustomModelId, type AdapterId, type FusionRunSummary, type ModelRef, type PermissionProfile, type RunnerRef } from "@fusion-harness/shared";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { apiPost } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -28,10 +28,20 @@ const presets = ["same-provider-first", "mixed-coding", "opencode-quality", "cod
 const modes = ["auto", "required", "direct"] as const;
 const permissions: PermissionProfile[] = ["readonly", "workspace_write", "trusted_internal"];
 const adapters: AdapterId[] = ["opencode", "codex", "api-key", "cloudflare-ai-gateway"];
+const modelSelectionStorageKey = "fusion-harness:model-selection";
 
 type PickerTarget = "analysis" | "judge" | "final";
 type OptionSource = "detected" | "suggested" | "custom";
 type ModelOption = ModelRef & { optionSource: OptionSource };
+type StoredModelSelection = {
+  analysisModelIds?: string[];
+  judgeModelId?: string;
+  finalModelId?: string;
+  preset?: (typeof presets)[number];
+  mode?: (typeof modes)[number];
+  permissionProfile?: PermissionProfile;
+  customModels?: Array<{ adapter: AdapterId; model: string }>;
+};
 
 type TaskConsoleProps = {
   models: ModelRef[];
@@ -49,6 +59,7 @@ const suggestedModels: ModelOption[] = [
 
 export function TaskConsole({ models, runners }: TaskConsoleProps) {
   const router = useRouter();
+  const initialOptions = useMemo(() => buildModelOptions(models, []), [models]);
   const [prompt, setPrompt] = useState("");
   const [preset, setPreset] = useState<(typeof presets)[number]>("mixed-coding");
   const [mode, setMode] = useState<(typeof modes)[number]>("required");
@@ -56,12 +67,13 @@ export function TaskConsole({ models, runners }: TaskConsoleProps) {
   const [customOptions, setCustomOptions] = useState<ModelOption[]>([]);
   const allOptions = useMemo(() => buildModelOptions(models, customOptions), [models, customOptions]);
   const optionById = useMemo(() => new Map(allOptions.map((option) => [option.id, option])), [allOptions]);
-  const [analysisModelIds, setAnalysisModelIds] = useState(() => defaultAnalysisIds(buildModelOptions(models, [])));
-  const [judgeModelId, setJudgeModelId] = useState(() => defaultJudgeId(buildModelOptions(models, [])));
-  const [finalModelId, setFinalModelId] = useState(() => defaultFinalId(buildModelOptions(models, [])));
+  const [analysisModelIds, setAnalysisModelIds] = useState(() => defaultAnalysisIds(initialOptions));
+  const [judgeModelId, setJudgeModelId] = useState(() => defaultJudgeId(initialOptions));
+  const [finalModelId, setFinalModelId] = useState(() => defaultFinalId(initialOptions));
   const [pickerTarget, setPickerTarget] = useState<PickerTarget>("analysis");
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [error, setError] = useState<string>();
+  const [hasLoadedStoredSelection, setHasLoadedStoredSelection] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const selectedAnalysis = analysisModelIds.map((id) => optionById.get(id)).filter(Boolean) as ModelOption[];
@@ -73,6 +85,39 @@ export function TaskConsole({ models, runners }: TaskConsoleProps) {
       : [pickerTarget === "judge" ? judgeModel?.id : finalModel?.id].filter((id): id is string => Boolean(id));
   const detectedAgentCount = runners.reduce((count, runner) => count + runner.tools.filter((tool) => tool.status !== "unavailable").length, 0);
   const disabled = isPending || !prompt.trim() || selectedAnalysis.length === 0;
+
+  useEffect(() => {
+    const storedSelection = readStoredModelSelection();
+    const timeoutId = window.setTimeout(() => {
+      if (storedSelection) {
+        const storedCustomOptions = customOptionsFromStored(storedSelection);
+        const storedOptions = buildModelOptions(models, storedCustomOptions);
+        setCustomOptions(storedCustomOptions);
+        setPreset(storedSelection.preset ?? "mixed-coding");
+        setMode(storedSelection.mode ?? "required");
+        setPermissionProfile(storedSelection.permissionProfile ?? "readonly");
+        setAnalysisModelIds(storedModelIds(storedSelection.analysisModelIds, storedOptions, 6) ?? defaultAnalysisIds(storedOptions));
+        setJudgeModelId(storedModelId(storedSelection.judgeModelId, storedOptions) ?? defaultJudgeId(storedOptions));
+        setFinalModelId(storedModelId(storedSelection.finalModelId, storedOptions) ?? defaultFinalId(storedOptions));
+      }
+      setHasLoadedStoredSelection(true);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [models]);
+
+  useEffect(() => {
+    if (!hasLoadedStoredSelection) return;
+    writeStoredModelSelection({
+      analysisModelIds,
+      judgeModelId,
+      finalModelId,
+      preset,
+      mode,
+      permissionProfile,
+      customModels: customOptions.filter((option) => option.optionSource === "custom").map((option) => ({ adapter: option.adapter, model: option.model })),
+    });
+  }, [analysisModelIds, customOptions, finalModelId, hasLoadedStoredSelection, judgeModelId, mode, permissionProfile, preset]);
 
   function openPicker(target: PickerTarget) {
     setPickerTarget(target);
@@ -567,6 +612,72 @@ function shortModelName(model: Pick<ModelRef, "displayName" | "model">) {
 
 function sourceScore(source: OptionSource) {
   return source === "detected" ? 0 : source === "suggested" ? 1 : 2;
+}
+
+function readStoredModelSelection(): StoredModelSelection | undefined {
+  if (typeof window === "undefined") return undefined;
+
+  const rawValue = window.localStorage.getItem(modelSelectionStorageKey);
+  if (!rawValue) return undefined;
+
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    return sanitizeStoredModelSelection(parsed);
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStoredModelSelection(selection: StoredModelSelection) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(modelSelectionStorageKey, JSON.stringify(selection));
+}
+
+function sanitizeStoredModelSelection(value: Partial<StoredModelSelection>): StoredModelSelection {
+  const customModels = Array.isArray(value.customModels)
+    ? value.customModels.flatMap((item) => {
+        if (!item || typeof item !== "object" || !isOneOf(adapters, item.adapter)) return [];
+        const model = sanitizeCustomModelId(item.model);
+        return model ? [{ adapter: item.adapter, model }] : [];
+      })
+    : undefined;
+
+  return {
+    analysisModelIds: Array.isArray(value.analysisModelIds)
+      ? value.analysisModelIds
+          .flatMap((id) => {
+            const modelId = sanitizeCustomModelId(id);
+            return modelId ? [modelId] : [];
+          })
+          .slice(0, 6)
+      : undefined,
+    judgeModelId: sanitizeCustomModelId(value.judgeModelId) ?? undefined,
+    finalModelId: sanitizeCustomModelId(value.finalModelId) ?? undefined,
+    preset: isOneOf(presets, value.preset) ? value.preset : undefined,
+    mode: isOneOf(modes, value.mode) ? value.mode : undefined,
+    permissionProfile: isOneOf(permissions, value.permissionProfile) ? value.permissionProfile : undefined,
+    customModels,
+  };
+}
+
+function customOptionsFromStored(selection?: StoredModelSelection) {
+  return (selection?.customModels ?? []).map((item) => customModel(item.adapter, item.model));
+}
+
+function storedModelIds(ids: string[] | undefined, options: ModelOption[], limit: number) {
+  const optionIds = new Set(options.map((option) => option.id));
+  const validIds = (ids ?? []).filter((id) => optionIds.has(id)).slice(0, limit);
+  return validIds.length ? validIds : undefined;
+}
+
+function storedModelId(id: string | undefined, options: ModelOption[]) {
+  if (!id) return undefined;
+  return options.some((option) => option.id === id) ? id : undefined;
+}
+
+function isOneOf<T extends readonly string[]>(values: T, value: unknown): value is T[number] {
+  return typeof value === "string" && values.includes(value);
 }
 
 const darkPillActive = "h-8 rounded-full bg-zinc-100 px-3 text-xs font-semibold text-zinc-950";
