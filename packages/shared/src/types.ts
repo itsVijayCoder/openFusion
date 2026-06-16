@@ -10,6 +10,27 @@ export type FusionMode = "direct" | "auto" | "required";
 
 export type RunStatus = "queued" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
 
+export type UserRole = "owner" | "admin" | "developer" | "viewer";
+
+export type RunnerStatus = "online" | "offline" | "disabled";
+
+export type ToolKind = "opencode" | "codex" | "docker" | "git" | "custom";
+
+export type ToolStatus = "detected" | "verified" | "unavailable" | "error";
+
+export type PanelOutputStatus = "queued" | "running" | "completed" | "failed" | "timeout" | "cancelled";
+
+export type AuditSeverity = "info" | "warning" | "error";
+
+export type ArtifactKind = "prompt" | "panel_output" | "judge" | "final" | "patch" | "log" | "transcript" | "generated_file" | "test_output";
+
+export type FusionProviderPolicy = "same_provider_first" | "mixed_quality" | "manual";
+
+export type ChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
 export type ModelRef = {
   id: string;
   adapter: AdapterId;
@@ -28,13 +49,180 @@ export type ModelRef = {
   };
 };
 
+export type ToolRef = {
+  id?: string;
+  tool: ToolKind;
+  version?: string;
+  path?: string;
+  status: ToolStatus;
+  metadata?: Record<string, unknown>;
+  detectedAt?: string;
+};
+
+export type RunnerRef = {
+  id: string;
+  orgId: string;
+  userId?: string;
+  name: string;
+  os: string;
+  arch: string;
+  version: string;
+  status: RunnerStatus;
+  capabilities: {
+    adapters: AdapterId[];
+    executors: Array<"host" | "docker">;
+    workspaceWrite: boolean;
+    shell: boolean;
+    docker: boolean;
+  };
+  tools: ToolRef[];
+  lastSeenAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkspaceRef = {
+  id: string;
+  orgId: string;
+  name: string;
+  repoUrl?: string;
+  defaultBranch?: string;
+  defaultRunnerPool?: string;
+  permissionProfile: PermissionProfile;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PresetConfig = {
+  id: string;
+  name: string;
+  description: string;
+  mode: FusionMode;
+  providerPolicy: FusionProviderPolicy;
+  maxPanelModels: number;
+  timeoutMs: number;
+  adapters?: AdapterId[];
+  permissionProfile: PermissionProfile;
+};
+
+export type PanelOutputRef = {
+  id: string;
+  runId: string;
+  modelId: string;
+  adapter: AdapterId;
+  status: PanelOutputStatus;
+  outputObjectKey?: string;
+  error?: string;
+  latencyMs?: number;
+  usage?: Record<string, unknown>;
+  createdAt: string;
+  completedAt?: string;
+};
+
+export type ArtifactRef = {
+  id: string;
+  orgId: string;
+  runId: string;
+  kind: ArtifactKind;
+  objectKey: string;
+  contentType?: string;
+  sizeBytes?: number;
+  sha256?: string;
+  createdAt: string;
+};
+
+export type AuditEventRef = {
+  id: string;
+  orgId: string;
+  userId?: string;
+  runnerId?: string;
+  runId?: string;
+  eventType: string;
+  severity: AuditSeverity;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type FusionRunSummary = {
+  id: string;
+  orgId: string;
+  workspaceId?: string;
+  userId: string;
+  runnerId?: string;
+  status: RunStatus;
+  mode: FusionMode;
+  preset?: string;
+  permissionProfile: PermissionProfile;
+  promptObjectKey?: string;
+  judgeObjectKey?: string;
+  finalObjectKey?: string;
+  error?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+};
+
+export type FusionRunDetail = FusionRunSummary & {
+  panelOutputs: PanelOutputRef[];
+  artifacts: ArtifactRef[];
+  auditEvents: AuditEventRef[];
+};
+
+export type RunnerRegistrationRequest = {
+  runnerId?: string;
+  name: string;
+  os: string;
+  arch: string;
+  version: string;
+  capabilities: RunnerRef["capabilities"];
+  tools: ToolRef[];
+  models?: ModelRef[];
+};
+
+export type ApprovalAction = "grant" | "deny";
+
+export type ApprovalRequest = {
+  action: ApprovalAction;
+  reason?: string;
+};
+
+export type DashboardSnapshot = {
+  runs: {
+    total: number;
+    queued: number;
+    running: number;
+    waitingApproval: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+  };
+  runners: {
+    total: number;
+    online: number;
+    offline: number;
+    disabled: number;
+  };
+  models: {
+    total: number;
+    verified: number;
+    cliSession: number;
+    cloudGateway: number;
+  };
+  artifacts: {
+    total: number;
+    totalBytes: number;
+  };
+  recentRuns: FusionRunSummary[];
+  recentAuditEvents: AuditEventRef[];
+};
+
 export type FusionRunRequest = {
   workspaceId?: string;
   mode: FusionMode;
   preset?: string;
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  messages: ChatMessage[];
   permissionProfile: PermissionProfile;
-  providerPolicy?: "same_provider_first" | "mixed_quality" | "manual";
+  providerPolicy?: FusionProviderPolicy;
   analysisModels?: string[];
   judgeModel?: string;
   finalModel?: string;
