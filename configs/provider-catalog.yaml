@@ -1,0 +1,20 @@
+providers:
+  opencode:
+    adapter: opencode
+    auth_modes:
+      - cli_session
+      - api_key
+    model_listing: true
+
+  codex:
+    adapter: codex
+    auth_modes:
+      - cli_session
+      - api_key
+    model_listing: configured_unverified
+
+  cloudflare-ai-gateway:
+    adapter: cloudflare-ai-gateway
+    auth_modes:
+      - cloud_gateway
+    model_listing: configured_unverified

@@ -1,0 +1,38 @@
+permission_profiles:
+  readonly:
+    description: Safe analysis only.
+    filesystem:
+      read: allow
+      write: deny
+    shell:
+      run: deny
+    network:
+      access: deny
+
+  workspace_write:
+    description: Allow edits inside approved workspaces. Ask before shell/network.
+    filesystem:
+      read: allow
+      write: workspace_only
+    shell:
+      run: ask
+    network:
+      access: ask
+
+  trusted_internal:
+    description: Trusted internal automation with allowlisted commands.
+    filesystem:
+      read: allow
+      write: workspace_only
+    shell:
+      run: allowlist
+      allow:
+        - git status
+        - git diff *
+        - npm test
+        - pnpm test
+        - pnpm build
+        - go test ./...
+        - pytest
+    network:
+      access: allowlist

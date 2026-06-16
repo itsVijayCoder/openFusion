@@ -1,0 +1,19 @@
+{
+  "name": "@fusion-harness/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fusion-harness/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.4"
+  }
+}

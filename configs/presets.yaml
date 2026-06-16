@@ -1,0 +1,44 @@
+presets:
+  same-provider-first:
+    description: Prefer models from the same authenticated provider or subscription.
+    min_panel_models: 2
+    max_panel_models: 5
+    timeout_ms: 120000
+    model_selection:
+      provider_policy: same_provider_first
+      fallback: best_quality_available
+
+  opencode-quality:
+    description: Use OpenCode as the main harness.
+    adapters:
+      include:
+        - opencode
+    max_panel_models: 4
+    timeout_ms: 120000
+
+  codex-quality:
+    description: Use Codex models first.
+    adapters:
+      include:
+        - codex
+    max_panel_models: 4
+    timeout_ms: 120000
+
+  mixed-coding:
+    description: Use both OpenCode and Codex.
+    adapters:
+      include:
+        - opencode
+        - codex
+    max_panel_models: 6
+    timeout_ms: 180000
+
+  fast:
+    description: Faster, lower-latency response.
+    max_panel_models: 2
+    timeout_ms: 45000
+
+  budget:
+    description: Prefer fewer calls and cheaper API-key models.
+    max_panel_models: 2
+    cost_policy: low

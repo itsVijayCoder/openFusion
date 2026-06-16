@@ -1,47 +1,66 @@
-# OpenNext Starter
+# Fusion Harness
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Fusion Harness is an internal multi-model coding and reasoning platform.
 
-## Getting Started
+The repository now follows the monorepo structure described in `Docs/fusion-harness-implementation-guide.md`.
 
-Read the documentation at https://opennext.js.org/cloudflare.
+## Workspaces
 
-## Develop
+```text
+apps/web        Next.js web app deployed through OpenNext on Cloudflare
+apps/desktop    Future desktop wrapper
+apps/runner-go  Native Go local runner
+workers/api     Cloudflare Worker API and Durable Objects
+workers/mcp     Cloudflare remote MCP Worker scaffold
+packages/core   Fusion, model selection, permissions, and run contracts
+packages/db     D1 schema, migrations, and query helpers
+packages/shared Shared types, IDs, errors, events, and Zod schemas
+packages/ui     Future shared UI package
+configs         Presets, permissions, and provider catalog
+Docs            Product and implementation planning docs
+```
 
-Run the Next.js development server:
+## Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the web app:
 
 ```bash
 npm run dev
-# or similar package manager command
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-## Preview
-
-Preview the application locally on the Cloudflare runtime:
+Run workspace checks:
 
 ```bash
-npm run preview
-# or similar package manager command
+npm run typecheck
+npm run lint
+npm run runner:test
 ```
 
-## Deploy
-
-Deploy the application to Cloudflare:
+Build all JavaScript/TypeScript workspaces:
 
 ```bash
-npm run deploy
-# or similar package manager command
+npm run build
 ```
 
-## Learn More
+## Cloudflare
 
-To learn more about Next.js, take a look at the following resources:
+The web app keeps its OpenNext config in `apps/web`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The API and MCP Workers keep separate `wrangler.jsonc` files under `workers/api` and `workers/mcp`. Cloudflare resource IDs are placeholders until dev/staging/prod resources are created.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Runner
+
+The Go runner scaffold is in `apps/runner-go`.
+
+```bash
+cd apps/runner-go
+go test ./...
+go run ./cmd/fusion-runner doctor
+go run ./cmd/fusion-runner discover --json
+```

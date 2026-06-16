@@ -1,0 +1,59 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "fusion-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ENVIRONMENT": "dev",
+    "PUBLIC_APP_URL": "http://localhost:3000"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fusion_harness_dev",
+      "database_id": "REPLACE_ME",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CONFIG_KV",
+      "id": "REPLACE_ME"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "fusion-artifacts-dev"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "FUSION_RUN",
+        "class_name": "FusionRunDO"
+      },
+      {
+        "name": "RUNNER_SESSION",
+        "class_name": "RunnerSessionDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["FusionRunDO", "RunnerSessionDO"]
+    }
+  ],
+  "workflows": [
+    {
+      "binding": "FUSION_WORKFLOW",
+      "name": "fusion-workflow",
+      "class_name": "FusionWorkflow"
+    }
+  ]
+}

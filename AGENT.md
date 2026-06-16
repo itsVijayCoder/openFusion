@@ -16,16 +16,21 @@ Cloud decides and coordinates. The runner detects and executes. R2 stores large 
 
 ## Current Repository Shape
 
-The current checked-in project is a Next.js client app at the repository root. The implementation guide describes the future target monorepo. Do not perform a broad monorepo migration unless the task explicitly asks for that phase.
+The repository is an npm workspace monorepo that follows the implementation guide.
 
 Current stack details:
 
 - Next.js `16.2.6`
 - React `19.1.7`
 - TypeScript strict mode
-- Tailwind CSS v4 through `src/app/globals.css`
-- shadcn configured by `components.json` with `radix-rhea`, RSC enabled, `@/` aliases, and `remixicon`
-- Cloudflare/OpenNext via `@opennextjs/cloudflare`, `wrangler.jsonc`, and `open-next.config.ts`
+- Web app under `apps/web`
+- Tailwind CSS v4 through `apps/web/src/app/globals.css`
+- shadcn configured by `apps/web/components.json` with `radix-rhea`, RSC enabled, `@/` aliases, and `remixicon`
+- Cloudflare/OpenNext via `@opennextjs/cloudflare`, `apps/web/wrangler.jsonc`, and `apps/web/open-next.config.ts`
+- Cloudflare Worker API under `workers/api`
+- Remote MCP Worker scaffold under `workers/mcp`
+- Shared TypeScript packages under `packages/*`
+- Go runner under `apps/runner-go`
 - Current package manager is npm because `package-lock.json` is present. Use `npm run ...` unless a dedicated migration changes this.
 
 ## Engineering Standards

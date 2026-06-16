@@ -1,0 +1,24 @@
+{
+  "name": "@fusion-harness/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fusion-harness/core": "0.1.0",
+    "@fusion-harness/db": "0.1.0",
+    "@fusion-harness/shared": "0.1.0",
+    "hono": "^4.10.6",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260616.0",
+    "typescript": "^5.7.4",
+    "wrangler": "^4.100.0"
+  }
+}
