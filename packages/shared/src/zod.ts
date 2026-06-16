@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { sanitizeCustomModelId } from "./models";
 
 export const adapterIdSchema = z.enum(["opencode", "codex", "api-key", "cloudflare-ai-gateway"]);
 export const authModeSchema = z.enum(["cli_session", "api_key", "cloud_gateway", "unknown"]);
@@ -52,15 +51,15 @@ export const modelRefSchema = z.object({
 });
 
 export const requestedModelIdSchema = z.string().transform((value, ctx) => {
-  const sanitized = sanitizeCustomModelId(value);
-  if (!sanitized) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 200 || /[\x00-\x1F\x7F]/.test(trimmed)) {
     ctx.addIssue({
       code: "custom",
-      message: "Model ID must be 1-200 characters and use only letters, numbers, '.', '_', '/', ':', '@', or '-'",
+      message: "Model ID must be 1-200 characters without control characters",
     });
     return z.NEVER;
   }
-  return sanitized;
+  return trimmed;
 });
 
 export const toolRefSchema = z.object({

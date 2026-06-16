@@ -137,7 +137,7 @@ function filterByPreset(models: ModelRef[], adapters?: AdapterId[]) {
 }
 
 function resolveRequestedModel(models: ModelRef[], requestedModel: string, fallbackAdapter?: AdapterId): ModelRef | undefined {
-  const normalized = sanitizeCustomModelId(requestedModel);
+  const normalized = requestedModel.trim();
   if (!normalized) return undefined;
 
   const match = models.find(
@@ -149,7 +149,9 @@ function resolveRequestedModel(models: ModelRef[], requestedModel: string, fallb
   );
 
   if (match) return match;
-  return synthesizeModel(normalized, fallbackAdapter);
+  const customModel = sanitizeCustomModelId(normalized);
+  if (!customModel) return undefined;
+  return synthesizeModel(customModel, fallbackAdapter);
 }
 
 function synthesizeModel(requestedModel: string, fallbackAdapter?: AdapterId): ModelRef {
