@@ -1,0 +1,526 @@
+package localagents
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/asthrix/fusion-harness/apps/runner-go/internal/adapters"
+	"github.com/asthrix/fusion-harness/apps/runner-go/internal/discovery"
+	"github.com/asthrix/fusion-harness/apps/runner-go/internal/executors/host"
+)
+
+type AgentDef struct {
+	ID               string
+	Name             string
+	Binary           string
+	FallbackBinaries []string
+	EnvOverride      string
+	VersionArgs      []string
+	ListModelsArgs   []string
+	FallbackModels   []ModelOption
+	Provider         string
+}
+
+type ModelOption struct {
+	ID          string
+	DisplayName string
+	Provider    string
+}
+
+func Catalog() []AgentDef {
+	return []AgentDef{
+		{
+			ID:               "opencode",
+			Name:             "OpenCode",
+			Binary:           "opencode-cli",
+			FallbackBinaries: []string{"opencode"},
+			EnvOverride:      "OPENCODE_BIN",
+			VersionArgs:      []string{"--version"},
+			ListModelsArgs:   []string{"models"},
+			FallbackModels: models(
+				"anthropic/claude-sonnet-4-5",
+				"openai/gpt-5",
+				"google/gemini-2.5-pro",
+				"minimax/minimax-m1",
+				"deepseek/deepseek-chat",
+				"moonshotai/kimi-k2",
+			),
+		},
+		{
+			ID:               "claude",
+			Name:             "Claude Code",
+			Binary:           "claude",
+			FallbackBinaries: []string{"openclaude"},
+			EnvOverride:      "CLAUDE_BIN",
+			VersionArgs:      []string{"--version"},
+			Provider:         "anthropic",
+			FallbackModels: models(
+				"sonnet",
+				"opus",
+				"haiku",
+				"claude-opus-4-5",
+				"claude-sonnet-4-5",
+				"claude-haiku-4-5",
+			),
+		},
+		{
+			ID:          "codex",
+			Name:        "Codex CLI",
+			Binary:      "codex",
+			EnvOverride: "CODEX_BIN",
+			VersionArgs: []string{"--version"},
+			Provider:    "openai",
+			FallbackModels: models(
+				"gpt-5.5",
+				"gpt-5.4",
+				"gpt-5.4-mini",
+				"gpt-5.3-codex",
+				"gpt-5.1",
+				"gpt-5.1-codex-mini",
+				"gpt-5-codex",
+				"gpt-5",
+				"o3",
+				"o4-mini",
+			),
+		},
+		{
+			ID:             "cursor-agent",
+			Name:           "Cursor Agent",
+			Binary:         "cursor-agent",
+			EnvOverride:    "CURSOR_AGENT_BIN",
+			VersionArgs:    []string{"--version"},
+			ListModelsArgs: []string{"models"},
+			FallbackModels: models("auto", "sonnet-4", "sonnet-4-thinking", "gpt-5"),
+		},
+		{
+			ID:          "gemini",
+			Name:        "Gemini CLI",
+			Binary:      "gemini",
+			EnvOverride: "GEMINI_BIN",
+			VersionArgs: []string{"--version"},
+			Provider:    "google",
+			FallbackModels: models(
+				"gemini-3-pro-preview",
+				"gemini-3-flash-preview",
+				"gemini-2.5-pro",
+				"gemini-2.5-flash",
+				"gemini-2.5-flash-lite",
+			),
+		},
+		{
+			ID:          "qwen",
+			Name:        "Qwen Code",
+			Binary:      "qwen",
+			EnvOverride: "QWEN_BIN",
+			VersionArgs: []string{"--version"},
+			Provider:    "qwen",
+			FallbackModels: models(
+				"qwen3-coder-plus",
+				"qwen3-coder-flash",
+			),
+		},
+		{
+			ID:          "qoder",
+			Name:        "Qoder CLI",
+			Binary:      "qodercli",
+			EnvOverride: "QODER_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("lite", "Lite"),
+				model("efficient", "Efficient"),
+				model("auto", "Auto"),
+				model("performance", "Performance"),
+				model("ultimate", "Ultimate"),
+			),
+		},
+		{
+			ID:          "copilot",
+			Name:        "GitHub Copilot CLI",
+			Binary:      "copilot",
+			EnvOverride: "COPILOT_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("claude-sonnet-4.6", "Claude Sonnet 4.6"),
+				model("gpt-5.2", "GPT-5.2"),
+			),
+		},
+		{
+			ID:               "deepseek",
+			Name:             "DeepSeek TUI",
+			Binary:           "deepseek",
+			FallbackBinaries: []string{"codewhale"},
+			EnvOverride:      "DEEPSEEK_BIN",
+			VersionArgs:      []string{"--version"},
+			Provider:         "deepseek",
+			FallbackModels:   models("deepseek-v4-pro", "deepseek-v4-flash"),
+		},
+		{
+			ID:          "kimi",
+			Name:        "Kimi CLI",
+			Binary:      "kimi",
+			EnvOverride: "KIMI_BIN",
+			VersionArgs: []string{"--version"},
+			Provider:    "moonshotai",
+			FallbackModels: models(
+				"kimi-k2-turbo-preview",
+				"moonshot-v1-8k",
+				"moonshot-v1-32k",
+			),
+		},
+		{
+			ID:          "hermes",
+			Name:        "Hermes",
+			Binary:      "hermes",
+			EnvOverride: "HERMES_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("grok-4.3", "grok-4.3 (xAI default)"),
+				model("openai-codex:gpt-5.5", "gpt-5.5 (openai-codex)"),
+				model("openai-codex:gpt-5.4", "gpt-5.4 (openai-codex)"),
+			),
+		},
+		{
+			ID:          "pi",
+			Name:        "Pi",
+			Binary:      "pi",
+			EnvOverride: "PI_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: models(
+				"anthropic/claude-sonnet-4-5",
+				"anthropic/claude-opus-4-5",
+				"openai/gpt-5",
+				"openai/o4-mini",
+				"google/gemini-2.5-pro",
+				"google/gemini-2.5-flash",
+			),
+		},
+		{
+			ID:          "aider",
+			Name:        "Aider",
+			Binary:      "aider",
+			EnvOverride: "AIDER_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: models(
+				"sonnet",
+				"gpt-4o",
+				"deepseek/deepseek-chat",
+				"gemini/gemini-2.0-flash",
+			),
+		},
+		{
+			ID:          "devin",
+			Name:        "Devin for Terminal",
+			Binary:      "devin",
+			EnvOverride: "DEVIN_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: models(
+				"adaptive",
+				"swe",
+				"opus",
+				"sonnet",
+				"codex",
+				"gpt",
+				"gemini",
+			),
+		},
+		{
+			ID:             "grok-build",
+			Name:           "Grok Build",
+			Binary:         "grok",
+			EnvOverride:    "GROK_BIN",
+			VersionArgs:    []string{"--version"},
+			ListModelsArgs: []string{"models"},
+			Provider:       "xai",
+			FallbackModels: models(
+				"grok-build",
+				"grok-4.3",
+				"grok-4.20-reasoning",
+				"grok-4.20-non-reasoning",
+				"grok-4.20-multi-agent",
+			),
+		},
+		{
+			ID:          "amp",
+			Name:        "Amp",
+			Binary:      "amp",
+			EnvOverride: "AMP_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("smart", "Smart (mode)"),
+				model("deep", "Deep (mode)"),
+				model("rush", "Rush (mode)"),
+			),
+		},
+		{
+			ID:          "kiro",
+			Name:        "Kiro CLI",
+			Binary:      "kiro-cli",
+			EnvOverride: "KIRO_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("default", "Default (CLI config)"),
+			),
+		},
+		{
+			ID:          "kilo",
+			Name:        "Kilo",
+			Binary:      "kilo",
+			EnvOverride: "KILO_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("default", "Default (CLI config)"),
+			),
+		},
+		{
+			ID:          "vibe",
+			Name:        "Mistral Vibe CLI",
+			Binary:      "vibe-acp",
+			EnvOverride: "VIBE_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("default", "Default (CLI config)"),
+			),
+		},
+		{
+			ID:          "trae-cli",
+			Name:        "Trae CLI",
+			Binary:      "traecli",
+			EnvOverride: "TRAE_CLI_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("default", "Default (CLI config)"),
+			),
+		},
+		{
+			ID:               "codebuddy",
+			Name:             "Codebuddy Code",
+			Binary:           "codebuddy",
+			FallbackBinaries: []string{"cbc"},
+			EnvOverride:      "CODEBUDDY_BIN",
+			VersionArgs:      []string{"--version"},
+			FallbackModels: models(
+				"glm-5.1-ioa",
+				"claude-sonnet-4.6-1m",
+				"gpt-5.5",
+				"gemini-3.5-flash",
+				"deepseek-v4-pro-ioa",
+				"kimi-k2.6-ioa",
+				"minimax-m3-ioa",
+			),
+		},
+		{
+			ID:               "reasonix",
+			Name:             "DeepSeek Reasonix",
+			Binary:           "reasonix",
+			FallbackBinaries: []string{"dsnix"},
+			EnvOverride:      "REASONIX_BIN",
+			VersionArgs:      []string{"--version"},
+			Provider:         "deepseek",
+			FallbackModels:   models("deepseek-v4-pro", "deepseek-v4-flash"),
+		},
+		{
+			ID:          "antigravity",
+			Name:        "Antigravity",
+			Binary:      "agy",
+			EnvOverride: "ANTIGRAVITY_BIN",
+			VersionArgs: []string{"--version"},
+			FallbackModels: labels(
+				model("Gemini 3.1 Pro (High)", "Gemini 3.1 Pro (High)"),
+				model("Gemini 3.1 Pro (Low)", "Gemini 3.1 Pro (Low)"),
+				model("Claude Sonnet 4.6 (Thinking)", "Claude Sonnet 4.6 (Thinking)"),
+				model("GPT-OSS 120B (Medium)", "GPT-OSS 120B (Medium)"),
+			),
+		},
+	}
+}
+
+func DetectAll(ctx context.Context, toolDirs []string) []discovery.Tool {
+	defs := Catalog()
+	tools := make([]discovery.Tool, 0, len(defs))
+	for _, def := range defs {
+		tools = append(tools, Detect(ctx, def, toolDirs))
+	}
+	return tools
+}
+
+func ListModels(ctx context.Context, allowedRoots []string, toolDirs []string) []adapters.ModelRef {
+	return listModels(ctx, Catalog(), allowedRoots, toolDirs)
+}
+
+func listModels(ctx context.Context, defs []AgentDef, allowedRoots []string, toolDirs []string) []adapters.ModelRef {
+	models := make([]adapters.ModelRef, 0)
+	for _, def := range defs {
+		tool := detect(ctx, def, toolDirs)
+		if !tool.Found {
+			continue
+		}
+		source := "fallback"
+		options := def.FallbackModels
+		if len(def.ListModelsArgs) > 0 {
+			if liveOptions := listLiveModels(ctx, def, tool.Path, allowedRoots); len(liveOptions) > 0 {
+				options = liveOptions
+				source = "live"
+			}
+		}
+		for _, option := range options {
+			models = append(models, modelRef(def, option, source))
+		}
+	}
+	return models
+}
+
+func Detect(ctx context.Context, def AgentDef, toolDirs []string) discovery.Tool {
+	tool := detect(ctx, def, toolDirs)
+	metadata := tool.Metadata
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["agentId"] = def.ID
+	metadata["displayName"] = def.Name
+	if def.EnvOverride != "" {
+		metadata["envOverride"] = def.EnvOverride
+	}
+	tool.Metadata = metadata
+	if def.ID != "opencode" && def.ID != "codex" {
+		tool.Tool = "custom"
+	}
+	return tool
+}
+
+func detect(ctx context.Context, def AgentDef, toolDirs []string) discovery.Tool {
+	versionArgs := def.VersionArgs
+	if len(versionArgs) == 0 {
+		versionArgs = []string{"--version"}
+	}
+	return discovery.DetectCommandWithVersionLookup(ctx, discovery.CommandLookup{
+		Name:             def.ID,
+		Binary:           def.Binary,
+		FallbackBinaries: def.FallbackBinaries,
+		EnvOverride:      def.EnvOverride,
+		ExtraDirs:        toolDirs,
+	}, versionArgs...)
+}
+
+func listLiveModels(ctx context.Context, def AgentDef, path string, allowedRoots []string) []ModelOption {
+	result, err := host.Run(ctx, host.CommandSpec{
+		Name:         path,
+		Args:         def.ListModelsArgs,
+		WorkingDir:   firstAllowedRoot(allowedRoots),
+		AllowedRoots: allowedRoots,
+		Timeout:      10 * time.Second,
+	})
+	if err != nil && result.Stdout == "" {
+		return nil
+	}
+	return parseModelLines(result.Stdout)
+}
+
+func parseModelLines(output string) []ModelOption {
+	lines := strings.Split(output, "\n")
+	models := make([]ModelOption, 0, len(lines))
+	seen := map[string]bool{}
+	for _, line := range lines {
+		id := strings.TrimSpace(strings.TrimPrefix(line, "-"))
+		if id == "" {
+			continue
+		}
+		lowerID := strings.ToLower(id)
+		if (strings.Contains(lowerID, "model") || strings.Contains(lowerID, "no models")) && len(strings.Fields(id)) <= 2 {
+			continue
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		models = append(models, ModelOption{ID: id, DisplayName: id})
+	}
+	return models
+}
+
+func modelRef(def AgentDef, option ModelOption, source string) adapters.ModelRef {
+	provider := option.Provider
+	if provider == "" {
+		provider = inferProvider(def, option.ID)
+	}
+	availability := "configured_unverified"
+	if source == "live" {
+		availability = "listed"
+	}
+	return adapters.ModelRef{
+		ID:           def.ID + "/" + option.ID,
+		Adapter:      def.ID,
+		Provider:     provider,
+		Model:        option.ID,
+		DisplayName:  displayName(option),
+		AuthMode:     "cli_session",
+		Availability: availability,
+		Source:       source,
+		Capabilities: adapters.ModelCapability{
+			Streaming:    true,
+			Tools:        true,
+			FileEdits:    true,
+			Shell:        true,
+			JSONOutput:   def.ID == "opencode" || def.ID == "codex" || def.ID == "gemini",
+			ModelListing: len(def.ListModelsArgs) > 0,
+		},
+	}
+}
+
+func inferProvider(def AgentDef, modelID string) string {
+	if def.Provider != "" {
+		return def.Provider
+	}
+	if parts := strings.SplitN(modelID, "/", 2); len(parts) == 2 && parts[0] != "" {
+		return parts[0]
+	}
+	if strings.HasPrefix(modelID, "claude") || modelID == "sonnet" || modelID == "opus" || modelID == "haiku" {
+		return "anthropic"
+	}
+	if strings.HasPrefix(modelID, "gpt") || strings.HasPrefix(modelID, "o3") || strings.HasPrefix(modelID, "o4") {
+		return "openai"
+	}
+	if strings.HasPrefix(modelID, "gemini") {
+		return "google"
+	}
+	if strings.HasPrefix(modelID, "deepseek") {
+		return "deepseek"
+	}
+	if strings.HasPrefix(modelID, "kimi") || strings.HasPrefix(modelID, "moonshot") {
+		return "moonshotai"
+	}
+	if strings.HasPrefix(modelID, "grok") {
+		return "xai"
+	}
+	return def.ID
+}
+
+func firstAllowedRoot(roots []string) string {
+	if len(roots) == 0 {
+		return "."
+	}
+	return roots[0]
+}
+
+func displayName(option ModelOption) string {
+	if option.DisplayName != "" {
+		return option.DisplayName
+	}
+	return option.ID
+}
+
+func models(ids ...string) []ModelOption {
+	options := make([]ModelOption, 0, len(ids))
+	for _, id := range ids {
+		options = append(options, ModelOption{ID: id, DisplayName: id})
+	}
+	return options
+}
+
+func labels(options ...ModelOption) []ModelOption {
+	return options
+}
+
+func model(id string, label string) ModelOption {
+	return ModelOption{ID: id, DisplayName: label}
+}

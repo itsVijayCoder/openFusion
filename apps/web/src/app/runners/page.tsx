@@ -44,12 +44,103 @@ const localAgents: Array<{
     icon: RiTerminalBoxLine,
   },
   {
+    id: "claude",
+    name: "Claude Code",
+    adapter: "claude",
+    description: "Claude Code or OpenClaude local CLI",
+    icon: RiTerminalBoxLine,
+  },
+  {
     id: "codex",
     name: "Codex CLI",
     tool: "codex",
     adapter: "codex",
     description: "Codex model IDs passed to codex exec",
     icon: RiCodeSSlashLine,
+  },
+  {
+    id: "gemini",
+    name: "Gemini CLI",
+    adapter: "gemini",
+    description: "Google Gemini local coding agent",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "cursor-agent",
+    name: "Cursor Agent",
+    adapter: "cursor-agent",
+    description: "Cursor's terminal coding agent",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "qwen",
+    name: "Qwen Code",
+    adapter: "qwen",
+    description: "Qwen local coding agent",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "qoder",
+    name: "Qoder CLI",
+    adapter: "qoder",
+    description: "Qoder's local CLI agent",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "copilot",
+    name: "Copilot CLI",
+    adapter: "copilot",
+    description: "GitHub Copilot terminal agent",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek TUI",
+    adapter: "deepseek",
+    description: "DeepSeek local terminal agent",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "kimi",
+    name: "Kimi CLI",
+    adapter: "kimi",
+    description: "Moonshot Kimi local agent",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "hermes",
+    name: "Hermes",
+    adapter: "hermes",
+    description: "Hermes ACP local agent",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "pi",
+    name: "Pi",
+    adapter: "pi",
+    description: "Pi local agent runtime",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "aider",
+    name: "Aider",
+    adapter: "aider",
+    description: "Aider local coding CLI",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "devin",
+    name: "Devin",
+    adapter: "devin",
+    description: "Devin for Terminal",
+    icon: RiTerminalBoxLine,
+  },
+  {
+    id: "grok-build",
+    name: "Grok Build",
+    adapter: "grok-build",
+    description: "xAI Grok Build CLI",
+    icon: RiTerminalBoxLine,
   },
   {
     id: "git",
@@ -84,7 +175,7 @@ export default async function RunnersPage() {
             </Button>
           </div>
           <p className="mt-5 text-sm leading-6 text-zinc-500">
-            Fusion Runner ships with the app. OpenCode and Codex are detected when their CLI is installed on the local host and the runner registers its discovery report.
+            Fusion Runner ships with the app. Local agents are detected when their CLI is installed on the host and the runner registers its discovery report.
           </p>
         </header>
 
@@ -93,7 +184,7 @@ export default async function RunnersPage() {
         <Section title="Detected">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {localAgents.map((agent) => {
-              const tool = agent.tool ? findTool(runners.data.data, agent.tool) : undefined;
+              const tool = findAgentTool(runners.data.data, agent);
               const detected = agent.id === "fusion-runner" ? runners.data.data.length > 0 : Boolean(tool && tool.status !== "unavailable");
               const modelCount = agent.adapter ? models.data.data.filter((model) => model.adapter === agent.adapter).length : 0;
               const Icon = agent.icon;
@@ -149,7 +240,7 @@ export default async function RunnersPage() {
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
                           {runner.tools.map((tool) => (
-                            <StatusPill key={tool.id ?? tool.tool} value={`${tool.tool}:${tool.status}`} />
+                            <StatusPill key={tool.id ?? `${tool.tool}:${tool.path ?? ""}`} value={`${toolName(tool)}:${tool.status}`} />
                           ))}
                         </div>
                       </td>
@@ -169,8 +260,16 @@ export default async function RunnersPage() {
   );
 }
 
-function findTool(runners: RunnerRef[], toolKind: ToolKind): ToolRef | undefined {
+function findAgentTool(runners: RunnerRef[], agent: { id: string; tool?: ToolKind }): ToolRef | undefined {
   return runners
     .flatMap((runner) => runner.tools)
-    .find((tool) => tool.tool === toolKind && tool.status !== "unavailable");
+    .find((tool) => {
+      if (agent.tool) return tool.tool === agent.tool && tool.status !== "unavailable";
+      return tool.tool === "custom" && tool.metadata?.agentId === agent.id && tool.status !== "unavailable";
+    });
+}
+
+function toolName(tool: ToolRef) {
+  if (tool.tool !== "custom") return tool.tool;
+  return typeof tool.metadata?.displayName === "string" ? tool.metadata.displayName : "custom";
 }

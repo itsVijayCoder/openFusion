@@ -12,14 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asthrix/fusion-harness/apps/runner-go/internal/adapters"
-	"github.com/asthrix/fusion-harness/apps/runner-go/internal/adapters/codex"
-	"github.com/asthrix/fusion-harness/apps/runner-go/internal/adapters/opencode"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/cloud"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/config"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/discovery"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/executors/docker"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/executors/host"
+	"github.com/asthrix/fusion-harness/apps/runner-go/internal/localagents"
 )
 
 const version = "0.1.0"
@@ -289,31 +287,25 @@ func buildDiscoveryReport(ctx context.Context) (discovery.Report, error) {
 		return discovery.Report{}, err
 	}
 
-	opencodeAdapter := opencode.Adapter{AllowedRoots: cfg.AllowedRoots, ToolDirs: cfg.ToolDirs}
-	codexAdapter := codex.Adapter{AllowedRoots: cfg.AllowedRoots, ToolDirs: cfg.ToolDirs}
 	models := make([]any, 0)
 
-	for _, adapter := range []adapters.Adapter{opencodeAdapter, codexAdapter} {
-		adapterModels, err := adapter.ListModels(ctx)
-		if err != nil {
-			continue
-		}
-		for _, model := range adapterModels {
-			models = append(models, model)
-		}
+	for _, model := range localagents.ListModels(ctx, cfg.AllowedRoots, cfg.ToolDirs) {
+		models = append(models, model)
 	}
+
+	tools := localagents.DetectAll(ctx, cfg.ToolDirs)
+	tools = append(
+		tools,
+		docker.Detect(),
+		discovery.DetectCommandWithVersion(ctx, "git", "--version"),
+	)
 
 	return discovery.Report{
 		RunnerID: cfg.RunnerID,
 		OS:       runtime.GOOS,
 		Arch:     runtime.GOARCH,
-		Tools: []discovery.Tool{
-			opencode.DetectWithDirs(ctx, cfg.ToolDirs),
-			codex.DetectWithDirs(ctx, cfg.ToolDirs),
-			docker.Detect(),
-			discovery.DetectCommandWithVersion(ctx, "git", "--version"),
-		},
-		Models: models,
+		Tools:    tools,
+		Models:   models,
 	}, nil
 }
 
@@ -323,8 +315,12 @@ func registrationPayload(cfg config.Config, report discovery.Report) map[string]
 	dockerAvailable := false
 
 	for _, tool := range report.Tools {
-		if tool.Found && (tool.Tool == "opencode" || tool.Tool == "codex") {
-			adaptersAvailable = append(adaptersAvailable, tool.Tool)
+		if tool.Found {
+			if tool.Tool == "opencode" || tool.Tool == "codex" {
+				adaptersAvailable = append(adaptersAvailable, tool.Tool)
+			} else if agentID, ok := tool.Metadata["agentId"].(string); ok && agentID != "" {
+				adaptersAvailable = append(adaptersAvailable, agentID)
+			}
 		}
 		if tool.Found && tool.Tool == "docker" {
 			dockerAvailable = true

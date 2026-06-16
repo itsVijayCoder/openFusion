@@ -27,7 +27,33 @@ import { cn } from "@/lib/utils";
 const presets = ["same-provider-first", "mixed-coding", "opencode-quality", "codex-quality", "fast", "budget"] as const;
 const modes = ["auto", "required", "direct"] as const;
 const permissions: PermissionProfile[] = ["readonly", "workspace_write", "trusted_internal"];
-const adapters: AdapterId[] = ["opencode", "codex", "api-key", "cloudflare-ai-gateway"];
+const adapters: AdapterId[] = [
+  "opencode",
+  "claude",
+  "codex",
+  "cursor-agent",
+  "gemini",
+  "qwen",
+  "qoder",
+  "copilot",
+  "deepseek",
+  "kimi",
+  "hermes",
+  "pi",
+  "aider",
+  "devin",
+  "grok-build",
+  "amp",
+  "kiro",
+  "kilo",
+  "vibe",
+  "trae-cli",
+  "codebuddy",
+  "reasonix",
+  "antigravity",
+  "api-key",
+  "cloudflare-ai-gateway",
+];
 const modelSelectionStorageKey = "fusion-harness:model-selection";
 
 type PickerTarget = "analysis" | "judge" | "final";
@@ -594,16 +620,34 @@ function customModel(adapter: AdapterId, model: string): ModelOption {
 }
 
 function adapterLabel(adapter: AdapterId) {
-  switch (adapter) {
-    case "opencode":
-      return "OpenCode";
-    case "codex":
-      return "Codex";
-    case "api-key":
-      return "API key";
-    case "cloudflare-ai-gateway":
-      return "AI Gateway";
-  }
+  const labels: Record<AdapterId, string> = {
+    opencode: "OpenCode",
+    claude: "Claude Code",
+    codex: "Codex",
+    "cursor-agent": "Cursor Agent",
+    gemini: "Gemini",
+    qwen: "Qwen",
+    qoder: "Qoder",
+    copilot: "Copilot",
+    deepseek: "DeepSeek",
+    kimi: "Kimi",
+    hermes: "Hermes",
+    pi: "Pi",
+    aider: "Aider",
+    devin: "Devin",
+    "grok-build": "Grok Build",
+    amp: "Amp",
+    kiro: "Kiro",
+    kilo: "Kilo",
+    vibe: "Vibe",
+    "trae-cli": "Trae CLI",
+    codebuddy: "Codebuddy",
+    reasonix: "Reasonix",
+    antigravity: "Antigravity",
+    "api-key": "API key",
+    "cloudflare-ai-gateway": "AI Gateway",
+  };
+  return labels[adapter];
 }
 
 function shortModelName(model: Pick<ModelRef, "displayName" | "model">) {
@@ -647,13 +691,13 @@ function sanitizeStoredModelSelection(value: Partial<StoredModelSelection>): Sto
     analysisModelIds: Array.isArray(value.analysisModelIds)
       ? value.analysisModelIds
           .flatMap((id) => {
-            const modelId = sanitizeCustomModelId(id);
+            const modelId = sanitizeStoredModelId(id);
             return modelId ? [modelId] : [];
           })
           .slice(0, 6)
       : undefined,
-    judgeModelId: sanitizeCustomModelId(value.judgeModelId) ?? undefined,
-    finalModelId: sanitizeCustomModelId(value.finalModelId) ?? undefined,
+    judgeModelId: sanitizeStoredModelId(value.judgeModelId) ?? undefined,
+    finalModelId: sanitizeStoredModelId(value.finalModelId) ?? undefined,
     preset: isOneOf(presets, value.preset) ? value.preset : undefined,
     mode: isOneOf(modes, value.mode) ? value.mode : undefined,
     permissionProfile: isOneOf(permissions, value.permissionProfile) ? value.permissionProfile : undefined,
@@ -674,6 +718,13 @@ function storedModelIds(ids: string[] | undefined, options: ModelOption[], limit
 function storedModelId(id: string | undefined, options: ModelOption[]) {
   if (!id) return undefined;
   return options.some((option) => option.id === id) ? id : undefined;
+}
+
+function sanitizeStoredModelId(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 200 || /[\x00-\x1F\x7F]/.test(trimmed)) return null;
+  return trimmed;
 }
 
 function isOneOf<T extends readonly string[]>(values: T, value: unknown): value is T[number] {

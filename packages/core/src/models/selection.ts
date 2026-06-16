@@ -16,6 +16,32 @@ export type SelectedFusionModels = {
   final?: ModelRef;
 };
 
+const localCodingAdapters: AdapterId[] = [
+  "opencode",
+  "claude",
+  "codex",
+  "cursor-agent",
+  "gemini",
+  "qwen",
+  "qoder",
+  "copilot",
+  "deepseek",
+  "kimi",
+  "hermes",
+  "pi",
+  "aider",
+  "devin",
+  "grok-build",
+  "amp",
+  "kiro",
+  "kilo",
+  "vibe",
+  "trae-cli",
+  "codebuddy",
+  "reasonix",
+  "antigravity",
+];
+
 export function selectFusionModels(input: ModelSelectionInput): SelectedFusionModels {
   const preset = resolvePreset(input.preset);
   const maxPanelModels = Math.max(1, Math.min(input.maxPanelModels || preset.maxPanelModels, preset.maxPanelModels));
@@ -180,13 +206,49 @@ function synthesizeModel(requestedModel: string, fallbackAdapter?: AdapterId): M
 }
 
 function inferProvider(adapter: AdapterId, model: string) {
-  if (adapter === "codex") return "openai";
+  const adapterProvider: Partial<Record<AdapterId, string>> = {
+    claude: "anthropic",
+    codex: "openai",
+    gemini: "google",
+    qwen: "qwen",
+    deepseek: "deepseek",
+    kimi: "moonshotai",
+    "grok-build": "xai",
+    reasonix: "deepseek",
+  };
+  if (adapterProvider[adapter]) return adapterProvider[adapter];
   const [provider] = model.split("/");
   return provider && provider !== model ? provider : adapter;
 }
 
 function isAdapterId(value: string): value is AdapterId {
-  return value === "opencode" || value === "codex" || value === "api-key" || value === "cloudflare-ai-gateway";
+  return (
+    value === "opencode" ||
+    value === "claude" ||
+    value === "codex" ||
+    value === "cursor-agent" ||
+    value === "gemini" ||
+    value === "qwen" ||
+    value === "qoder" ||
+    value === "copilot" ||
+    value === "deepseek" ||
+    value === "kimi" ||
+    value === "hermes" ||
+    value === "pi" ||
+    value === "aider" ||
+    value === "devin" ||
+    value === "grok-build" ||
+    value === "amp" ||
+    value === "kiro" ||
+    value === "kilo" ||
+    value === "vibe" ||
+    value === "trae-cli" ||
+    value === "codebuddy" ||
+    value === "reasonix" ||
+    value === "antigravity" ||
+    value === "api-key" ||
+    value === "cloudflare-ai-gateway"
+  );
 }
 
 function dedupeModels(models: ModelRef[]) {
@@ -205,7 +267,7 @@ function resolvePreset(preset: string): { maxPanelModels: number; providerPolicy
     case "codex-quality":
       return { maxPanelModels: 4, providerPolicy: "same_provider_first", adapters: ["codex"] };
     case "mixed-coding":
-      return { maxPanelModels: 6, providerPolicy: "mixed_quality", adapters: ["opencode", "codex"] };
+      return { maxPanelModels: 6, providerPolicy: "mixed_quality", adapters: localCodingAdapters };
     case "fast":
     case "budget":
       return { maxPanelModels: 2, providerPolicy: "mixed_quality" };

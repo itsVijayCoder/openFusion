@@ -1,6 +1,32 @@
 import { z } from "zod";
 
-export const adapterIdSchema = z.enum(["opencode", "codex", "api-key", "cloudflare-ai-gateway"]);
+export const adapterIdSchema = z.enum([
+  "opencode",
+  "claude",
+  "codex",
+  "cursor-agent",
+  "gemini",
+  "qwen",
+  "qoder",
+  "copilot",
+  "deepseek",
+  "kimi",
+  "hermes",
+  "pi",
+  "aider",
+  "devin",
+  "grok-build",
+  "amp",
+  "kiro",
+  "kilo",
+  "vibe",
+  "trae-cli",
+  "codebuddy",
+  "reasonix",
+  "antigravity",
+  "api-key",
+  "cloudflare-ai-gateway",
+]);
 export const authModeSchema = z.enum(["cli_session", "api_key", "cloud_gateway", "unknown"]);
 export const modelAvailabilitySchema = z.enum(["detected", "listed", "verified", "configured_unverified", "unavailable"]);
 export const modelSourceSchema = z.enum(["live", "fallback", "suggested", "custom"]);

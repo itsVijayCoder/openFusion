@@ -1,4 +1,29 @@
-export type AdapterId = "opencode" | "codex" | "api-key" | "cloudflare-ai-gateway";
+export type AdapterId =
+  | "opencode"
+  | "claude"
+  | "codex"
+  | "cursor-agent"
+  | "gemini"
+  | "qwen"
+  | "qoder"
+  | "copilot"
+  | "deepseek"
+  | "kimi"
+  | "hermes"
+  | "pi"
+  | "aider"
+  | "devin"
+  | "grok-build"
+  | "amp"
+  | "kiro"
+  | "kilo"
+  | "vibe"
+  | "trae-cli"
+  | "codebuddy"
+  | "reasonix"
+  | "antigravity"
+  | "api-key"
+  | "cloudflare-ai-gateway";
 
 export type AuthMode = "cli_session" | "api_key" | "cloud_gateway" | "unknown";
 

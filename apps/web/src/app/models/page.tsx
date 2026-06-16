@@ -60,7 +60,7 @@ export default async function ModelsPage() {
             </table>
           </div>
         ) : (
-          <EmptyState title="No discovered models" description="Register a runner with OpenCode or Codex installed to populate CLI-backed models." />
+          <EmptyState title="No discovered models" description="Register a runner with local agent CLIs installed to populate CLI-backed models." />
         )}
       </Section>
     </div>
