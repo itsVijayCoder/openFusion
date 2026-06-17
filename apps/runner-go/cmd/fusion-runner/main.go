@@ -180,9 +180,9 @@ func runConfig(args []string) error {
 	case "default-profile":
 		cfg.DefaultProfile = args[2]
 	case "allowed-root":
-		cfg.AllowedRoots = append(cfg.AllowedRoots, args[2])
+		cfg.AllowedRoots = appendUniqueString(cfg.AllowedRoots, args[2])
 	case "tool-dir":
-		cfg.ToolDirs = append(cfg.ToolDirs, args[2])
+		cfg.ToolDirs = appendUniqueString(cfg.ToolDirs, args[2])
 	default:
 		return fmt.Errorf("unknown config key %q", args[1])
 	}
@@ -735,4 +735,17 @@ func allowedRootsWithWorkspace(roots []string, workspaceDir string) []string {
 		}
 	}
 	return append(append([]string{}, roots...), workspaceDir)
+}
+
+func appendUniqueString(items []string, value string) []string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return items
+	}
+	for _, item := range items {
+		if item == trimmed {
+			return items
+		}
+	}
+	return append(items, trimmed)
 }

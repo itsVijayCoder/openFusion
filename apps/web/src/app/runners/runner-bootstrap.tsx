@@ -1,6 +1,6 @@
 "use client";
 
-import { RiClipboardLine, RiExternalLinkLine, RiRefreshLine, RiTerminalBoxLine } from "@remixicon/react";
+import { RiClipboardLine, RiRefreshLine, RiTerminalBoxLine } from "@remixicon/react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiUrl } from "@/lib/api";
@@ -10,14 +10,14 @@ type RunnerBootstrapProps = {
 };
 
 export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
-  const [copied, setCopied] = useState<"binary" | "dev" | undefined>();
+  const [copied, setCopied] = useState<"install" | "manual" | "dev" | undefined>();
   const cloudUrl = useMemo(() => apiUrl("").replace(/\/$/, ""), []);
-  const binaryCommand = `fusion-runner serve --cloud-url ${cloudUrl}`;
+  const installCommand = `npm run runner:install:macos -- --cloud-url ${cloudUrl}`;
+  const manualCommand = `fusion-runner serve --cloud-url ${cloudUrl}`;
   const devCommand = `cd apps/runner-go && go run ./cmd/fusion-runner serve --cloud-url ${cloudUrl}`;
-  const protocolUrl = `fusion-runner://serve?cloud_url=${encodeURIComponent(cloudUrl)}`;
 
-  async function copyCommand(kind: "binary" | "dev") {
-    const command = kind === "binary" ? binaryCommand : devCommand;
+  async function copyCommand(kind: "install" | "manual" | "dev") {
+    const command = kind === "install" ? installCommand : kind === "manual" ? manualCommand : devCommand;
     await navigator.clipboard.writeText(command);
     setCopied(kind);
     window.setTimeout(() => setCopied(undefined), 1800);
@@ -25,10 +25,6 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
 
   function refresh() {
     window.location.reload();
-  }
-
-  function openProtocolLauncher() {
-    window.location.href = protocolUrl;
   }
 
   return (
@@ -41,21 +37,17 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
             </span>
             <div>
               <h2 className="text-sm font-semibold text-zinc-900">Local Runner</h2>
-              <p className="text-xs font-medium text-zinc-500">{hasRunner ? "Runner detected. Keep it running while jobs execute." : "Start this on the machine that has your agent CLIs."}</p>
+              <p className="text-xs font-medium text-zinc-500">{hasRunner ? "Runner detected. macOS keeps it available in the background." : "Install once on the machine that has your agent CLIs."}</p>
             </div>
           </div>
           <p className="mt-4 text-sm leading-6 text-zinc-600">
-            In production the web app and API are hosted, so your machine only needs the local runner process. Browsers cannot directly start local binaries; a true one-click launch requires an installed Fusion Runner protocol handler.
+            The one-time macOS installer builds the runner, writes its cloud URL, and registers a LaunchAgent so the runner starts on login and restarts automatically.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" className="gap-2 rounded-md" onClick={() => copyCommand("binary")}>
+          <Button type="button" size="sm" className="gap-2 rounded-md" onClick={() => copyCommand("install")}>
             <RiClipboardLine aria-hidden className="size-4" />
-            {copied === "binary" ? "Copied" : "Copy Command"}
-          </Button>
-          <Button type="button" size="sm" variant="secondary" className="gap-2 rounded-md" onClick={openProtocolLauncher}>
-            <RiExternalLinkLine aria-hidden className="size-4" />
-            Open Launcher
+            {copied === "install" ? "Copied" : "Copy Install"}
           </Button>
           <Button type="button" size="sm" variant="ghost" className="gap-2 rounded-md" onClick={refresh}>
             <RiRefreshLine aria-hidden className="size-4" />
@@ -63,8 +55,9 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
           </Button>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <CommandBlock label="Installed binary" command={binaryCommand} onCopy={() => copyCommand("binary")} copied={copied === "binary"} />
+      <div className="mt-4 grid gap-3 xl:grid-cols-3">
+        <CommandBlock label="One-time macOS service" command={installCommand} onCopy={() => copyCommand("install")} copied={copied === "install"} />
+        <CommandBlock label="Manual foreground fallback" command={manualCommand} onCopy={() => copyCommand("manual")} copied={copied === "manual"} />
         <CommandBlock label="Repo development" command={devCommand} onCopy={() => copyCommand("dev")} copied={copied === "dev"} />
       </div>
     </section>

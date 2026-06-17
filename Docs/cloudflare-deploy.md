@@ -11,15 +11,17 @@ Cloudflare hosts these services:
 - `fusion-api`: Hono API Worker with D1, KV, Durable Objects, and optional R2.
 - `fusion-mcp`: optional MCP Worker that points at `fusion-api`.
 
-The Go runner is not deployed to Cloudflare. In production, the user starts one
-local process:
+The Go runner is not deployed to Cloudflare. For the current source checkout,
+install it once on macOS:
 
 ```bash
-fusion-runner serve --cloud-url https://fusion-api.asthrix.workers.dev
+npm run runner:install:macos -- --cloud-url https://fusion-api.asthrix.workers.dev
 ```
 
-That runner detects local CLIs, registers models, polls jobs from the API, runs
-panel/judge/final jobs locally, and streams results back to Cloudflare.
+That installer registers a LaunchAgent, so the runner starts on login and
+restarts automatically. The runner detects local CLIs, registers models, polls
+jobs from the API, runs panel/judge/final jobs locally, and streams results back
+to Cloudflare.
 
 ## Scripts
 
@@ -109,7 +111,7 @@ curl https://fusion-api.asthrix.workers.dev/api/runners
 Then start a local runner:
 
 ```bash
-fusion-runner serve --cloud-url https://fusion-api.asthrix.workers.dev
+npm run runner:install:macos -- --cloud-url https://fusion-api.asthrix.workers.dev
 ```
 
 Open the deployed web app and check `/runners`. The runner should appear with

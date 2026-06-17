@@ -33,6 +33,10 @@
     "mcp:build": "npm run build -w @fusion-harness/mcp",
     "mcp:deploy": "npm run deploy -w @fusion-harness/mcp",
     "deploy:cloudflare": "npm run typecheck && npm run api:migrate:remote && npm run api:deploy && npm run mcp:deploy && npm run web:deploy",
+    "runner:build": "cd apps/runner-go && go build -o fusion-runner ./cmd/fusion-runner",
+    "runner:install:macos": "scripts/install-runner-macos.sh",
+    "runner:uninstall:macos": "scripts/uninstall-runner-macos.sh",
+    "runner:logs:macos": "tail -n 80 -f ~/.fusion-harness/logs/runner.out.log ~/.fusion-harness/logs/runner.err.log",
     "runner:test": "cd apps/runner-go && go test ./..."
   },
   "devDependencies": {

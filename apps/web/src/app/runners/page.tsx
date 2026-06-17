@@ -255,7 +255,7 @@ export default async function RunnersPage() {
               </table>
             </div>
           ) : (
-            <EmptyState title="No runners registered" description="Run `fusion-runner serve --once` from a trusted workspace host to register local capabilities." />
+            <EmptyState title="No runners registered" description="Use the one-time macOS installer above, then refresh this page after the service starts." />
           )}
         </Section>
       </div>
