@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DataNotice, EmptyState, Metric, PageHeader, Section, StatusPill } from "@/components/product-ui";
 import { apiGet } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
+import { RunEventStream } from "./run-event-stream";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ export default async function RunDetailPage({ params }: RunPageProps) {
         <Metric label="Permission" value={run.data.permissionProfile} />
         <Metric label="Created" value={formatDateTime(run.data.createdAt)} />
       </div>
+      <RunEventStream runId={run.data.id} />
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <Section title="Panel Outputs">
           {run.data.panelOutputs.length ? (
