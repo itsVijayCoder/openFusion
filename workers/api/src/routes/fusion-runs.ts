@@ -1,4 +1,4 @@
-import { createAuditEvent, getFusionRunDetail, listFusionRuns, updateFusionRunStatus } from "@fusion-harness/db";
+import { createAuditEvent, getFusionRunDetail, listFusionRuns, listRunEvents, updateFusionRunStatus } from "@fusion-harness/db";
 import { approvalRequestSchema, formatEntityId, fusionRunRequestSchema } from "@fusion-harness/shared";
 import { Hono } from "hono";
 import type { AppBindings } from "../env";
@@ -29,9 +29,22 @@ export const fusionRunRoutes = new Hono<AppBindings>()
 
     return c.json(run);
   })
-  .get("/:id/events", (c) => {
-    const id = c.env.FUSION_RUN.idFromName(c.req.param("id"));
-    return c.env.FUSION_RUN.get(id).fetch(c.req.raw);
+  .get("/:id/events", async (c) => {
+    const runId = c.req.param("id");
+    if (c.req.raw.headers.get("upgrade") === "websocket") {
+      const id = c.env.FUSION_RUN.idFromName(runId);
+      return c.env.FUSION_RUN.get(id).fetch(c.req.raw);
+    }
+
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const afterSeq = Number(c.req.query("afterSeq") ?? 0);
+    const limit = Number(c.req.query("limit") ?? 1000);
+    return c.json({
+      data: await listRunEvents(c.env.DB, principal.orgId, runId, {
+        afterSeq: Number.isFinite(afterSeq) ? Math.max(afterSeq, 0) : 0,
+        limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 1000) : 1000,
+      }),
+    });
   })
   .post("/:id/approve", async (c) => {
     const principal = requireAccessIdentity(c.req.raw.headers);

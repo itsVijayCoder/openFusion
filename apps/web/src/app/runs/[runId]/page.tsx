@@ -31,7 +31,7 @@ export default async function RunDetailPage({ params }: RunPageProps) {
   const run = await apiGet<FusionRunDetail>(`/api/fusion/runs/${runId}`, fallbackRun(runId));
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex min-w-0 flex-col gap-6 overflow-hidden p-6">
       <PageHeader title={run.data.id} description="Fusion trace, panel outputs, judge/final artifacts, and audit history." />
       <DataNotice source={run.source} error={run.error} />
       <div className="grid gap-4 md:grid-cols-4">
@@ -41,7 +41,7 @@ export default async function RunDetailPage({ params }: RunPageProps) {
         <Metric label="Created" value={formatDateTime(run.data.createdAt)} />
       </div>
       <RunEventStream runId={run.data.id} />
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Section title="Panel Outputs">
           {run.data.panelOutputs.length ? (
             <div className="divide-y divide-border rounded-lg border border-border">
