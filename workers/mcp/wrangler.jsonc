@@ -9,6 +9,6 @@
   },
   "vars": {
     "ENVIRONMENT": "dev",
-    "FUSION_API_URL": "http://localhost:8787"
+    "FUSION_API_URL": "https://fusion-api.asthrix.workers.dev"
   }
 }

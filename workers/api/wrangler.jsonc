@@ -15,20 +15,14 @@
     {
       "binding": "DB",
       "database_name": "fusion_harness_dev",
-      "database_id": "REPLACE_ME",
+      "database_id": "5b1f71c3-f792-48aa-a865-faf4cd6c67ca",
       "migrations_dir": "../../packages/db/migrations"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "CONFIG_KV",
-      "id": "REPLACE_ME"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "ARTIFACTS",
-      "bucket_name": "fusion-artifacts-dev"
+      "id": "34fa55d3717f4f4fa4fb7c3817a30536"
     }
   ],
   "durable_objects": {
@@ -47,13 +41,6 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["FusionRunDO", "RunnerSessionDO"]
-    }
-  ],
-  "workflows": [
-    {
-      "binding": "FUSION_WORKFLOW",
-      "name": "fusion-workflow",
-      "class_name": "FusionWorkflow"
     }
   ]
 }
