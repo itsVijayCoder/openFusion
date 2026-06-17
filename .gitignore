@@ -48,5 +48,9 @@ next-env.d.ts
 .wrangler
 .dev.vars*
 
+# Go runner dist
+apps/runner-go/dist/
+
+
 
 !.dev.vars.example

@@ -4,7 +4,7 @@ export type ApiResult<T> = {
   error?: string;
 };
 
-const defaultApiBaseUrl = "http://localhost:8787";
+const defaultApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8787";
 
 export function apiUrl(path: string) {
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || defaultApiBaseUrl;

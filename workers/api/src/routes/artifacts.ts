@@ -39,6 +39,10 @@ export const artifactRoutes = new Hono<AppBindings>()
       return c.json(artifact);
     }
 
+    if (!c.env.ARTIFACTS) {
+      return c.json({ error: "Artifact storage not configured" }, 503);
+    }
+
     const object = await c.env.ARTIFACTS.get(artifact.objectKey);
     if (!object) {
       return c.json({ error: "Artifact object not found" }, 404);

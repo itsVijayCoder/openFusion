@@ -35,23 +35,25 @@ export async function createRunFromRequest(env: Env, principal: AccessIdentity, 
     createdAt: now,
   });
 
-  await env.ARTIFACTS.put(
-    promptObjectKey,
-    JSON.stringify(
+if (env.ARTIFACTS) {
+    await env.ARTIFACTS.put(
+      promptObjectKey,
+      JSON.stringify(
+        {
+          runId,
+          createdAt: now,
+          request: payload,
+        },
+        null,
+        2,
+      ),
       {
-        runId,
-        createdAt: now,
-        request: payload,
+        httpMetadata: {
+          contentType: "application/json",
+        },
       },
-      null,
-      2,
-    ),
-    {
-      httpMetadata: {
-        contentType: "application/json",
-      },
-    },
-  );
+    );
+  }
 
   await createArtifact(env.DB, {
     id: formatEntityId("artifact", crypto.randomUUID()),

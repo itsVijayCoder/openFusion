@@ -9,7 +9,7 @@
   },
   "vars": {
     "ENVIRONMENT": "dev",
-    "PUBLIC_APP_URL": "http://localhost:3000"
+    "PUBLIC_APP_URL": "https://fusion-harness.asthrix.workers.dev"
   },
   "d1_databases": [
     {

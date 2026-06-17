@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	DefaultCloudURL = "http://localhost:8787"
-	DefaultProfile  = "readonly"
+	DefaultCloudURL = "https://fusion-api.asthrix.workers.dev"
+	DefaultProfile = "readonly"
 )
 
 type Config struct {
