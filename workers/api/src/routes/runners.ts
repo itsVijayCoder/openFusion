@@ -1,5 +1,6 @@
 import {
   completeRunnerJob,
+  createArtifact,
   createAuditEvent,
   createRunEvent,
   ensurePrincipal,
@@ -9,8 +10,10 @@ import {
   listRunners,
   markRunnerJobLeased,
   registerRunner,
+  updatePanelOutput,
 } from "@fusion-harness/db";
 import {
+  type ArtifactKind,
   formatEntityId,
   runnerEventSchema,
   runnerJobCompletionSchema,
@@ -24,6 +27,7 @@ import {
 } from "@fusion-harness/shared";
 import { Hono } from "hono";
 import type { AppBindings, Env } from "../env";
+import { buildArtifactKey } from "../services/artifact-store";
 import { requireAccessIdentity } from "../services/auth";
 import { notifyRunnerSessionObject } from "../services/runner-session";
 import { notifyFusionRunObject } from "../services/runs";
@@ -117,6 +121,12 @@ export const runnerRoutes = new Hono<AppBindings>()
     if (!leasedJob) {
       return c.json({ error: "Claimed job is missing from D1", jobId: claimBody.job.id }, 409);
     }
+    if (leasedJob.kind === "panel") {
+      await updatePanelOutput(c.env.DB, {
+        id: panelOutputId(leasedJob.id),
+        status: "running",
+      });
+    }
 
     return c.json({ job: { ...leasedJob, payload: claimBody.job.payload } satisfies ClaimedRunnerJob });
   })
@@ -186,15 +196,27 @@ async function finishRunnerJob(
   }
 
   const now = new Date().toISOString();
+  const outputObjectKey = body.outputObjectKey ?? (await persistJobOutput(env, orgId, existingJob, body.outputText));
   const job = await completeRunnerJob(env.DB, {
     orgId,
     runnerId,
     jobId,
     status,
-    outputObjectKey: body.outputObjectKey,
+    outputObjectKey,
     error: body.error,
     completedAt: now,
   });
+  if (existingJob.kind === "panel") {
+    await updatePanelOutput(env.DB, {
+      id: panelOutputId(jobId),
+      status: status === "completed" ? "completed" : status,
+      outputObjectKey,
+      error: body.error,
+      latencyMs: body.latencyMs,
+      usage: body.usage,
+      completedAt: now,
+    });
+  }
 
   await notifyRunnerSessionObject(env, runnerId, `/jobs/${encodeURIComponent(jobId)}/${status === "completed" ? "complete" : "fail"}`, {
     status,
@@ -208,7 +230,7 @@ async function finishRunnerJob(
     timestamp: now,
     data: {
       status,
-      outputObjectKey: body.outputObjectKey,
+      outputObjectKey,
       outputText: body.outputText,
       error: body.error,
       latencyMs: body.latencyMs,
@@ -218,6 +240,41 @@ async function finishRunnerJob(
   });
 
   return { job, event };
+}
+
+async function persistJobOutput(env: Env, orgId: string, job: RunnerJob, outputText: string | undefined) {
+  if (!env.ARTIFACTS || !outputText) {
+    return undefined;
+  }
+
+  const kind = artifactKindForJob(job.kind);
+  const objectKey = buildArtifactKey(orgId, job.runId, `${kind}/${job.id}.txt`);
+  await env.ARTIFACTS.put(objectKey, outputText, {
+    httpMetadata: {
+      contentType: "text/plain; charset=utf-8",
+    },
+  });
+  await createArtifact(env.DB, {
+    id: formatEntityId("artifact", crypto.randomUUID()),
+    orgId,
+    runId: job.runId,
+    kind,
+    objectKey,
+    contentType: "text/plain; charset=utf-8",
+    sizeBytes: new TextEncoder().encode(outputText).byteLength,
+    createdAt: new Date().toISOString(),
+  });
+  return objectKey;
+}
+
+function artifactKindForJob(kind: RunnerJobKind): ArtifactKind {
+  if (kind === "judge") return "judge";
+  if (kind === "final" || kind === "direct") return "final";
+  return "panel_output";
+}
+
+function panelOutputId(jobId: string) {
+  return formatEntityId("panel", jobId);
 }
 
 async function appendRunEvent(env: Env, orgId: string, event: RunnerEvent) {

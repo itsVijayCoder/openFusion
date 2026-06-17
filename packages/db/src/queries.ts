@@ -87,6 +87,25 @@ export type CreateRunnerJobInput = {
   createdAt: string;
 };
 
+export type CreatePanelOutputInput = {
+  id: string;
+  runId: string;
+  modelId: string;
+  adapter: AdapterId;
+  status?: PanelOutputStatus;
+  createdAt: string;
+};
+
+export type UpdatePanelOutputInput = {
+  id: string;
+  status: PanelOutputStatus;
+  outputObjectKey?: string;
+  error?: string;
+  latencyMs?: number;
+  usage?: Record<string, unknown>;
+  completedAt?: string;
+};
+
 export type MarkRunnerJobLeasedInput = {
   orgId: string;
   runnerId: string;
@@ -495,6 +514,50 @@ export async function createRunnerJob(db: D1DatabaseLike, input: CreateRunnerJob
   return job;
 }
 
+export async function createPanelOutput(db: D1DatabaseLike, input: CreatePanelOutputInput): Promise<PanelOutputRef> {
+  await db
+    .prepare(
+      `INSERT INTO panel_outputs (
+         id, run_id, model_id, adapter, status, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(input.id, input.runId, input.modelId, input.adapter, input.status ?? "queued", input.createdAt)
+    .run();
+
+  const panelOutput = await getPanelOutput(db, input.id);
+  if (!panelOutput) {
+    throw new Error("Panel output insert did not produce a readable row");
+  }
+  return panelOutput;
+}
+
+export async function updatePanelOutput(db: D1DatabaseLike, input: UpdatePanelOutputInput): Promise<PanelOutputRef | null> {
+  await db
+    .prepare(
+      `UPDATE panel_outputs
+       SET status = ?,
+           output_object_key = COALESCE(?, output_object_key),
+           error = COALESCE(?, error),
+           latency_ms = COALESCE(?, latency_ms),
+           usage_json = COALESCE(?, usage_json),
+           completed_at = COALESCE(?, completed_at)
+       WHERE id = ?`,
+    )
+    .bind(
+      input.status,
+      input.outputObjectKey ?? null,
+      input.error ?? null,
+      input.latencyMs ?? null,
+      input.usage ? JSON.stringify(input.usage) : null,
+      input.completedAt ?? null,
+      input.id,
+    )
+    .run();
+
+  return getPanelOutput(db, input.id);
+}
+
 export async function getRunnerJob(
   db: D1DatabaseLike,
   orgId: string,
@@ -782,6 +845,11 @@ async function listPanelOutputs(db: D1DatabaseLike, runId: string): Promise<Pane
     .all<PanelOutputRow>();
 
   return results.map(mapPanelOutput);
+}
+
+async function getPanelOutput(db: D1DatabaseLike, id: string): Promise<PanelOutputRef | null> {
+  const row = await db.prepare("SELECT * FROM panel_outputs WHERE id = ?").bind(id).first<PanelOutputRow>();
+  return row ? mapPanelOutput(row) : null;
 }
 
 async function replaceRunnerTools(db: D1DatabaseLike, runnerId: string, tools: ToolRef[], now: string) {

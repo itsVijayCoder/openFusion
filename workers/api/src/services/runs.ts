@@ -3,6 +3,7 @@ import {
   createArtifact,
   createAuditEvent,
   createFusionRun,
+  createPanelOutput,
   createRunEvent,
   createRunnerJob,
   ensurePrincipal,
@@ -252,12 +253,26 @@ async function enqueueRunnerJob(
     inputObjectKey,
     createdAt: now,
   });
+  if (step.kind === "panel") {
+    await createPanelOutput(env.DB, {
+      id: panelOutputId(step.jobId),
+      runId: payload.runId,
+      modelId: step.modelId,
+      adapter: step.adapter,
+      status: "queued",
+      createdAt: now,
+    });
+  }
   const dispatchPayload: ClaimedRunnerJob = {
     ...job,
     payload,
   };
 
   await notifyRunnerSessionObject(env, step.runnerId, "/dispatch", dispatchPayload);
+}
+
+function panelOutputId(jobId: string) {
+  return formatEntityId("panel", jobId);
 }
 
 async function persistJobInput(env: Env, orgId: string, runId: string, jobId: string, payload: RunnerJobPayload) {
