@@ -18,6 +18,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present && npm run runner:test",
+    "deploy": "npm run deploy:cloudflare",
     "web:dev": "npm run dev -w @fusion-harness/web",
     "web:build": "npm run build -w @fusion-harness/web",
     "web:lint": "npm run lint -w @fusion-harness/web",
@@ -25,8 +26,13 @@
     "web:deploy": "npm run deploy -w @fusion-harness/web",
     "api:dev": "npm run dev -w @fusion-harness/api",
     "api:build": "npm run build -w @fusion-harness/api",
+    "api:deploy": "npm run deploy -w @fusion-harness/api",
+    "api:migrate:local": "npm run migrate:local -w @fusion-harness/api",
+    "api:migrate:remote": "npm run migrate:remote -w @fusion-harness/api",
     "mcp:dev": "npm run dev -w @fusion-harness/mcp",
     "mcp:build": "npm run build -w @fusion-harness/mcp",
+    "mcp:deploy": "npm run deploy -w @fusion-harness/mcp",
+    "deploy:cloudflare": "npm run typecheck && npm run api:migrate:remote && npm run api:deploy && npm run mcp:deploy && npm run web:deploy",
     "runner:test": "cd apps/runner-go && go test ./..."
   },
   "devDependencies": {
