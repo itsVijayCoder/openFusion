@@ -379,7 +379,7 @@ function ModelPicker({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
       <div className="grid h-[min(560px,calc(100vh-40px))] w-[min(900px,calc(100vw-32px))] grid-cols-1 overflow-hidden rounded-lg border border-white/15 bg-[#0b0c0e] text-zinc-100 shadow-2xl shadow-black/60 md:grid-cols-[1fr_270px]">
-        <div className="flex min-w-0 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-col">
           <div className="flex items-center gap-3 border-b border-white/10 p-3">
             <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border border-white/15 bg-black/20 px-3">
               <RiSearchLine aria-hidden className="size-4 text-zinc-500" />
@@ -464,7 +464,7 @@ function ModelPicker({
           </div>
         </div>
 
-        <aside className="hidden border-l border-white/10 bg-[#111214] p-4 md:block">
+        <aside className="hidden min-h-0 border-l border-white/10 bg-[#111214] p-4 md:block">
           {activeOption ? (
             <div className="flex h-full flex-col gap-4">
               <div className="flex items-center gap-3">
