@@ -22,6 +22,8 @@ export type AdapterId =
   | "codebuddy"
   | "reasonix"
   | "antigravity"
+  | "openrouter"
+  | "openrouter-fusion"
   | "api-key"
   | "cloudflare-ai-gateway";
 
@@ -47,11 +49,35 @@ export type ToolStatus = "detected" | "verified" | "unavailable" | "error";
 
 export type PanelOutputStatus = "queued" | "running" | "completed" | "failed" | "timeout" | "cancelled";
 
+export type RunnerJobKind = "direct" | "panel" | "judge" | "final" | "command" | "patch";
+
+export type RunnerJobStatus = "queued" | "leased" | "running" | "completed" | "failed" | "timeout" | "cancelled";
+
 export type AuditSeverity = "info" | "warning" | "error";
 
 export type ArtifactKind = "prompt" | "panel_output" | "judge" | "final" | "patch" | "log" | "transcript" | "generated_file" | "test_output";
 
 export type FusionProviderPolicy = "same_provider_first" | "mixed_quality" | "manual";
+
+export type FusionExecutionStep = {
+  id: string;
+  kind: RunnerJobKind;
+  jobId: string;
+  runnerId?: string;
+  modelId?: string;
+  adapter?: AdapterId;
+  model?: string;
+  role?: string;
+  dependsOn?: string[];
+};
+
+export type FusionExecutionPlan = {
+  version: 1;
+  runId: string;
+  mode: FusionMode;
+  steps: FusionExecutionStep[];
+  createdAt: string;
+};
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -184,6 +210,7 @@ export type FusionRunSummary = {
   promptObjectKey?: string;
   judgeObjectKey?: string;
   finalObjectKey?: string;
+  executionPlan?: FusionExecutionPlan;
   error?: string;
   createdAt: string;
   startedAt?: string;
@@ -205,6 +232,46 @@ export type RunnerRegistrationRequest = {
   capabilities: RunnerRef["capabilities"];
   tools: ToolRef[];
   models?: ModelRef[];
+};
+
+export type RunnerJob = {
+  id: string;
+  orgId: string;
+  runId: string;
+  runnerId: string;
+  kind: RunnerJobKind;
+  status: RunnerJobStatus;
+  attempt: number;
+  leaseOwner?: string;
+  leaseExpiresAt?: string;
+  inputObjectKey?: string;
+  outputObjectKey?: string;
+  error?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+};
+
+export type RunnerJobPayload = {
+  jobId: string;
+  runId: string;
+  kind: RunnerJobKind;
+  modelId?: string;
+  adapter?: AdapterId;
+  model?: string;
+  role?: string;
+  prompt?: string;
+  promptObjectKey?: string;
+  workspaceId?: string;
+  workspacePath?: string;
+  permissionProfile: PermissionProfile;
+  timeoutMs?: number;
+  attempt: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type ClaimedRunnerJob = RunnerJob & {
+  payload: RunnerJobPayload;
 };
 
 export type ApprovalAction = "grant" | "deny";

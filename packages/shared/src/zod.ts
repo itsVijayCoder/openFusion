@@ -24,6 +24,8 @@ export const adapterIdSchema = z.enum([
   "codebuddy",
   "reasonix",
   "antigravity",
+  "openrouter",
+  "openrouter-fusion",
   "api-key",
   "cloudflare-ai-gateway",
 ]);
@@ -36,6 +38,8 @@ export const runStatusSchema = z.enum(["queued", "running", "waiting_approval", 
 export const runnerStatusSchema = z.enum(["online", "offline", "disabled"]);
 export const toolKindSchema = z.enum(["opencode", "codex", "docker", "git", "custom"]);
 export const toolStatusSchema = z.enum(["detected", "verified", "unavailable", "error"]);
+export const runnerJobKindSchema = z.enum(["direct", "panel", "judge", "final", "command", "patch"]);
+export const runnerJobStatusSchema = z.enum(["queued", "leased", "running", "completed", "failed", "timeout", "cancelled"]);
 export const artifactKindSchema = z.enum([
   "prompt",
   "panel_output",
@@ -49,6 +53,43 @@ export const artifactKindSchema = z.enum([
 ]);
 export const auditSeveritySchema = z.enum(["info", "warning", "error"]);
 export const providerPolicySchema = z.enum(["same_provider_first", "mixed_quality", "manual"]);
+
+export const runEventTypeSchema = z.enum([
+  "run.created",
+  "run.started",
+  "run.planning.started",
+  "run.planning.completed",
+  "panel.job.queued",
+  "panel.job.started",
+  "panel.thinking.delta",
+  "panel.output.delta",
+  "panel.tool_call",
+  "panel.tool_result",
+  "panel.usage",
+  "panel.job.completed",
+  "panel.job.failed",
+  "judge.started",
+  "judge.output.delta",
+  "judge.completed",
+  "judge.failed",
+  "final.started",
+  "final.thinking.delta",
+  "final.delta",
+  "final.tool_call",
+  "final.tool_result",
+  "final.completed",
+  "approval.requested",
+  "approval.granted",
+  "approval.denied",
+  "command.started",
+  "command.output",
+  "command.completed",
+  "file.changed",
+  "artifact.uploaded",
+  "run.completed",
+  "run.failed",
+  "run.cancelled",
+]);
 
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
@@ -129,6 +170,86 @@ export const fusionRunRequestSchema = z.object({
   finalModel: requestedModelIdSchema.optional(),
   stream: z.boolean().optional(),
   timeoutMs: z.number().int().positive().optional(),
+});
+
+export const fusionExecutionStepSchema = z.object({
+  id: z.string().min(1),
+  kind: runnerJobKindSchema,
+  jobId: z.string().min(1),
+  runnerId: z.string().optional(),
+  modelId: requestedModelIdSchema.optional(),
+  adapter: adapterIdSchema.optional(),
+  model: requestedModelIdSchema.optional(),
+  role: z.string().optional(),
+  dependsOn: z.array(z.string().min(1)).optional(),
+});
+
+export const fusionExecutionPlanSchema = z.object({
+  version: z.literal(1),
+  runId: z.string().min(1),
+  mode: fusionModeSchema,
+  steps: z.array(fusionExecutionStepSchema),
+  createdAt: z.string().min(1),
+});
+
+export const runnerEventSchema = z.object({
+  type: runEventTypeSchema,
+  runId: z.string().min(1),
+  seq: z.number().int().positive().optional(),
+  jobId: z.string().optional(),
+  runnerId: z.string().optional(),
+  timestamp: z.string().min(1),
+  data: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const runnerJobPayloadSchema = z.object({
+  jobId: z.string().min(1),
+  runId: z.string().min(1),
+  kind: runnerJobKindSchema,
+  modelId: requestedModelIdSchema.optional(),
+  adapter: adapterIdSchema.optional(),
+  model: requestedModelIdSchema.optional(),
+  role: z.string().optional(),
+  prompt: z.string().optional(),
+  promptObjectKey: z.string().optional(),
+  workspaceId: z.string().optional(),
+  workspacePath: z.string().optional(),
+  permissionProfile: permissionProfileSchema,
+  timeoutMs: z.number().int().positive().optional(),
+  attempt: z.number().int().positive(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const runnerJobSchema = z.object({
+  id: z.string().min(1),
+  orgId: z.string().min(1),
+  runId: z.string().min(1),
+  runnerId: z.string().min(1),
+  kind: runnerJobKindSchema,
+  status: runnerJobStatusSchema,
+  attempt: z.number().int().nonnegative(),
+  leaseOwner: z.string().optional(),
+  leaseExpiresAt: z.string().optional(),
+  inputObjectKey: z.string().optional(),
+  outputObjectKey: z.string().optional(),
+  error: z.string().optional(),
+  createdAt: z.string().min(1),
+  startedAt: z.string().optional(),
+  completedAt: z.string().optional(),
+});
+
+export const claimedRunnerJobSchema = runnerJobSchema.extend({
+  payload: runnerJobPayloadSchema,
+});
+
+export const runnerJobCompletionSchema = z.object({
+  status: z.enum(["completed", "failed", "timeout", "cancelled"]).default("completed"),
+  outputObjectKey: z.string().optional(),
+  outputText: z.string().optional(),
+  error: z.string().optional(),
+  latencyMs: z.number().int().nonnegative().optional(),
+  usage: z.record(z.string(), z.unknown()).optional(),
+  artifactKeys: z.array(z.string()).optional(),
 });
 
 export const approvalRequestSchema = z.object({

@@ -95,6 +95,7 @@ export const fusionRuns = sqliteTable(
     promptObjectKey: text("prompt_object_key"),
     judgeObjectKey: text("judge_object_key"),
     finalObjectKey: text("final_object_key"),
+    executionPlanJson: text("execution_plan_json"),
     error: text("error"),
     createdAt: text("created_at").notNull(),
     startedAt: text("started_at"),
@@ -119,6 +120,82 @@ export const panelOutputs = sqliteTable(
     completedAt: text("completed_at"),
   },
   (table) => [index("idx_panel_outputs_run").on(table.runId)],
+);
+
+export const runnerJobs = sqliteTable(
+  "runner_jobs",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    runId: text("run_id").notNull(),
+    runnerId: text("runner_id").notNull(),
+    kind: text("kind").notNull(),
+    status: text("status").notNull(),
+    attempt: integer("attempt").notNull().default(0),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: text("lease_expires_at"),
+    inputObjectKey: text("input_object_key"),
+    outputObjectKey: text("output_object_key"),
+    error: text("error"),
+    createdAt: text("created_at").notNull(),
+    startedAt: text("started_at"),
+    completedAt: text("completed_at"),
+  },
+  (table) => [
+    index("idx_runner_jobs_runner_status").on(table.runnerId, table.status, table.createdAt),
+    index("idx_runner_jobs_run").on(table.runId, table.createdAt),
+  ],
+);
+
+export const runEvents = sqliteTable(
+  "run_events",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    runId: text("run_id").notNull(),
+    seq: integer("seq").notNull(),
+    type: text("type").notNull(),
+    jobId: text("job_id"),
+    runnerId: text("runner_id"),
+    payloadJson: text("payload_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("idx_run_events_run_seq").on(table.runId, table.seq)],
+);
+
+export const runnerTokens = sqliteTable(
+  "runner_tokens",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    runnerId: text("runner_id").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    scopesJson: text("scopes_json").notNull(),
+    createdBy: text("created_by"),
+    expiresAt: text("expires_at"),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("idx_runner_tokens_runner").on(table.runnerId, table.revokedAt)],
+);
+
+export const presets = sqliteTable(
+  "presets",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    mode: text("mode").notNull(),
+    analysisModelsJson: text("analysis_models_json").notNull(),
+    judgeModel: text("judge_model"),
+    finalModel: text("final_model"),
+    providerPolicy: text("provider_policy").notNull(),
+    permissionProfile: text("permission_profile").notNull(),
+    timeoutMs: integer("timeout_ms"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("idx_presets_org_name").on(table.orgId, table.name)],
 );
 
 export const artifacts = sqliteTable("artifacts", {

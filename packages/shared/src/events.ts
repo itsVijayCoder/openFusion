@@ -5,13 +5,22 @@ export const RUN_EVENT_TYPES = [
   "run.planning.completed",
   "panel.job.queued",
   "panel.job.started",
+  "panel.thinking.delta",
   "panel.output.delta",
+  "panel.tool_call",
+  "panel.tool_result",
+  "panel.usage",
   "panel.job.completed",
   "panel.job.failed",
   "judge.started",
+  "judge.output.delta",
   "judge.completed",
+  "judge.failed",
   "final.started",
+  "final.thinking.delta",
   "final.delta",
+  "final.tool_call",
+  "final.tool_result",
   "final.completed",
   "approval.requested",
   "approval.granted",
@@ -31,8 +40,13 @@ export type RunEventType = (typeof RUN_EVENT_TYPES)[number];
 export type RunnerEvent = {
   type: RunEventType;
   runId: string;
+  seq?: number;
   jobId?: string;
   runnerId?: string;
   timestamp: string;
   data: Record<string, unknown>;
+};
+
+export type RunEvent = RunnerEvent & {
+  seq: number;
 };
