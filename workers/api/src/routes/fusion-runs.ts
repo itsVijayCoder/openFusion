@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { AppBindings } from "../env";
 import { recordApproval } from "../services/approvals";
 import { requireAccessIdentity } from "../services/auth";
-import { createRunFromRequest, notifyFusionRunObject, RunCreationError } from "../services/runs";
+import { createRunFromRequest, notifyFusionRunObject, reconcileFusionRun, RunCreationError } from "../services/runs";
 
 export const fusionRunRoutes = new Hono<AppBindings>()
   .get("/", async (c) => {
@@ -37,6 +37,7 @@ export const fusionRunRoutes = new Hono<AppBindings>()
     }
 
     const principal = requireAccessIdentity(c.req.raw.headers);
+    await reconcileFusionRun(c.env, principal.orgId, runId);
     const afterSeq = Number(c.req.query("afterSeq") ?? 0);
     const limit = Number(c.req.query("limit") ?? 1000);
     return c.json({

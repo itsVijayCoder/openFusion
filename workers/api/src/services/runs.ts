@@ -257,6 +257,17 @@ export async function advanceFusionRunAfterJob(env: Env, orgId: string, complete
     return;
   }
 
+  const dispatchableQueuedStep = run.executionPlan.steps.find((step) => {
+    if (step.kind !== "judge" && step.kind !== "final") return false;
+    const job = jobsById.get(step.jobId);
+    if (job?.status !== "queued") return false;
+    return (step.dependsOn ?? []).every((jobId) => isTerminal(jobsById.get(jobId)?.status));
+  });
+  if (dispatchableQueuedStep) {
+    await dispatchDeferredStep(env, orgId, run, completedJob, dispatchableQueuedStep, panelOutputs, jobs, now);
+    return;
+  }
+
   const nextStep = run.executionPlan.steps.find((step) => {
     if (step.kind !== "judge" && step.kind !== "final") return false;
     if (jobsById.has(step.jobId)) return false;
@@ -264,25 +275,55 @@ export async function advanceFusionRunAfterJob(env: Env, orgId: string, complete
   });
   if (!nextStep) return;
 
+  await dispatchDeferredStep(env, orgId, run, completedJob, nextStep, panelOutputs, jobs, now);
+}
+
+export async function reconcileFusionRun(env: Env, orgId: string, runId: string, now = new Date().toISOString()) {
+  const run = await getFusionRun(env.DB, orgId, runId);
+  if (!run?.executionPlan || run.status !== "running") return;
+
+  const jobs = await listRunnerJobsByRun(env.DB, orgId, runId);
+  const latestTerminalJob = [...jobs].reverse().find((job) => isTerminal(job.status));
+  if (latestTerminalJob) {
+    await advanceFusionRunAfterJob(env, orgId, latestTerminalJob, now);
+  }
+}
+
+async function dispatchDeferredStep(
+  env: Env,
+  orgId: string,
+  run: NonNullable<Awaited<ReturnType<typeof getFusionRun>>>,
+  completedJob: RunnerJob,
+  step: FusionExecutionStep,
+  panelOutputs: Array<{ model: string; output: string }>,
+  jobs: RunnerJob[],
+  now: string,
+) {
   const request = await loadRunRequest(env, run.promptObjectKey);
   const runnableRequest = request ?? requestFromRun(run);
   const userPrompt = request ? renderMessages(request.messages) : "Original user request was unavailable. Use the provided panel evidence only.";
-  const prompt = await promptForDeferredStep(env, orgId, completedJob.runId, nextStep, userPrompt, panelOutputs, jobs);
+  const runnableStep = await hydrateStepRouting(env, orgId, step);
+  if (!runnableStep) return;
+  const prompt = await promptForDeferredStep(env, orgId, completedJob.runId, runnableStep, userPrompt, panelOutputs, jobs);
 
-  await enqueueRunnerJob(env, orgId, runnableRequest, userPrompt, run.promptObjectKey ?? "", nextStep, now, prompt);
-  await appendRunEvent(env, orgId, {
-    type: nextStep.kind === "judge" ? "judge.started" : "final.started",
-    runId: completedJob.runId,
-    jobId: nextStep.jobId,
-    runnerId: nextStep.runnerId,
-    timestamp: now,
-    data: {
-      modelId: nextStep.modelId,
-      adapter: nextStep.adapter,
-      model: nextStep.model,
-      dependencies: nextStep.dependsOn ?? [],
-    },
-  });
+  await enqueueRunnerJob(env, orgId, runnableRequest, userPrompt, run.promptObjectKey ?? "", runnableStep, now, prompt);
+  const startedType = runnableStep.kind === "judge" ? "judge.started" : "final.started";
+  const events = await listRunEvents(env.DB, orgId, completedJob.runId, { limit: 1000 });
+  if (!events.some((event) => event.jobId === runnableStep.jobId && event.type === startedType)) {
+    await appendRunEvent(env, orgId, {
+      type: startedType,
+      runId: completedJob.runId,
+      jobId: runnableStep.jobId,
+      runnerId: runnableStep.runnerId,
+      timestamp: now,
+      data: {
+        modelId: runnableStep.modelId,
+        adapter: runnableStep.adapter,
+        model: runnableStep.model,
+        dependencies: runnableStep.dependsOn ?? [],
+      },
+    });
+  }
 }
 
 async function enqueueRunnerJob(
@@ -493,6 +534,18 @@ async function promptForDeferredStep(
   });
 }
 
+async function hydrateStepRouting(env: Env, orgId: string, step: FusionExecutionStep): Promise<FusionExecutionStep | undefined> {
+  if (step.runnerId && step.modelId && step.adapter && step.model) return step;
+  if (!step.adapter || !step.modelId || !step.model) return undefined;
+
+  const runner = resolveRunnerForStep(step, await listRunners(env.DB, orgId));
+  if (!runner) return undefined;
+  return {
+    ...step,
+    runnerId: runner.id,
+  };
+}
+
 async function successfulPanelOutputs(env: Env, orgId: string, runId: string, plan: FusionExecutionPlan, jobs: RunnerJob[]) {
   const outputs: Array<{ model: string; output: string }> = [];
   for (const job of jobs) {
@@ -577,6 +630,16 @@ function resolveRunner(model: ModelRef, runners: RunnerRef[]) {
   }
 
   const candidates = runners.filter((runner) => runner.status !== "disabled" && runner.capabilities.adapters.includes(model.adapter));
+  return candidates.find((runner) => runner.status === "online") ?? candidates[0];
+}
+
+function resolveRunnerForStep(step: FusionExecutionStep, runners: RunnerRef[]) {
+  if (step.runnerId) {
+    const exactRunner = runners.find((runner) => runner.id === step.runnerId && runner.status !== "disabled");
+    if (exactRunner) return exactRunner;
+  }
+
+  const candidates = runners.filter((runner) => runner.status !== "disabled" && step.adapter && runner.capabilities.adapters.includes(step.adapter));
   return candidates.find((runner) => runner.status === "online") ?? candidates[0];
 }
 
