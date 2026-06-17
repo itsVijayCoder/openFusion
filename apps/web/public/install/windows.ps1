@@ -206,8 +206,8 @@ if ($LASTEXITCODE -ne 0) {
 
 if ($AllowedRoots.Count -eq 0) {
   $defaultRoots = @(
-    Join-Path $env:USERPROFILE "Projects",
-    Join-Path $env:USERPROFILE "Documents"
+    (Join-Path -Path $env:USERPROFILE -ChildPath "Projects")
+    (Join-Path -Path $env:USERPROFILE -ChildPath "Documents")
   )
   foreach ($defaultRoot in $defaultRoots) {
     if (Test-Path -LiteralPath $defaultRoot -PathType Container) {

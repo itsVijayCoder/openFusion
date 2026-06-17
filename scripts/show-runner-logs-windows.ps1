@@ -7,8 +7,8 @@ if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
 
 $logDir = Join-Path $env:USERPROFILE ".fusion-harness\logs"
 $paths = @(
-  Join-Path $logDir "runner.out.log",
-  Join-Path $logDir "runner.err.log"
+  (Join-Path -Path $logDir -ChildPath "runner.out.log")
+  (Join-Path -Path $logDir -ChildPath "runner.err.log")
 )
 $existing = @($paths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
 
