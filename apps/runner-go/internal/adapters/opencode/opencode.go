@@ -82,7 +82,7 @@ func (adapter Adapter) Run(ctx context.Context, input adapters.RunInput, emit fu
 	}
 
 	args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
-	if input.Model != "" {
+	if input.Model != "" && input.Model != "default" {
 		args = append(args, "--model", input.Model)
 	}
 	args = append(args, "-")
@@ -123,21 +123,30 @@ func (adapter Adapter) Run(ctx context.Context, input adapters.RunInput, emit fu
 
 func parseModelLines(output string) []adapters.ModelRef {
 	lines := strings.Split(output, "\n")
-	models := make([]adapters.ModelRef, 0, len(lines))
+	models := []adapters.ModelRef{modelRef("default", "listed", "live")}
+	seen := map[string]bool{"default": true}
 
 	for _, line := range lines {
 		model := strings.TrimSpace(strings.TrimPrefix(line, "-"))
 		if model == "" || strings.Contains(strings.ToLower(model), "model") && len(strings.Fields(model)) == 1 {
 			continue
 		}
+		if seen[model] {
+			continue
+		}
+		seen[model] = true
 		models = append(models, modelRef(model, "listed", "live"))
 	}
 
+	if len(models) <= 1 {
+		return nil
+	}
 	return models
 }
 
 func defaultModels() []adapters.ModelRef {
 	return []adapters.ModelRef{
+		modelRef("default", "configured_unverified", "fallback"),
 		modelRef("anthropic/claude-sonnet-4-5", "configured_unverified", "fallback"),
 		modelRef("openai/gpt-5", "configured_unverified", "fallback"),
 		modelRef("google/gemini-2.5-pro", "configured_unverified", "fallback"),

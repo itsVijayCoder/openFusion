@@ -77,6 +77,28 @@ go run ./cmd/fusion-runner serve --once
 
 Runner capabilities include config persistence, OpenCode/Codex/Docker/Git discovery, adapter model metadata, host execution with workspace validation, Docker execution with conservative sandbox flags, API registration, and heartbeat support.
 
+Run the local Go harness UI:
+
+```bash
+cd apps/runner-go
+go run ./cmd/fusion-runner ui --workspace /path/to/workspace
+```
+
+Then open `http://127.0.0.1:7457`. The UI detects local agent CLIs, lets you choose panel, judge, and final models, and runs the OpenRouter-style panel -> judge -> final-writer pipeline through local OpenCode/Codex sessions. Choose `default` to let the selected CLI use its own configured model.
+
+Run the same fusion flow from the terminal:
+
+```bash
+cd apps/runner-go
+go run ./cmd/fusion-runner fuse \
+  --workspace /path/to/workspace \
+  --analysis-model opencode/openai/gpt-5 \
+  --analysis-model codex/gpt-5-codex \
+  --judge-model codex/gpt-5.5 \
+  --final-model codex/gpt-5-codex \
+  --prompt "Compare the options and produce the best answer."
+```
+
 ## Phase Status
 
 | Phase | Status |

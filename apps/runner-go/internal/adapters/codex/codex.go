@@ -7,6 +7,7 @@ import (
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/adapters"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/discovery"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/executors/host"
+	"github.com/asthrix/fusion-harness/apps/runner-go/internal/localagents"
 )
 
 type Adapter struct {
@@ -50,25 +51,39 @@ func detect(ctx context.Context, toolDirs []string) discovery.Tool {
 }
 
 func (adapter Adapter) ListModels(ctx context.Context) ([]adapters.ModelRef, error) {
-	if !detect(ctx, adapter.ToolDirs).Found {
+	tool := detect(ctx, adapter.ToolDirs)
+	if !tool.Found {
 		return nil, nil
 	}
 
-	models := []string{
-		"gpt-5.5",
-		"gpt-5.4",
-		"gpt-5.4-mini",
-		"gpt-5.3-codex",
-		"gpt-5.1",
-		"gpt-5.1-codex-mini",
-		"gpt-5-codex",
-		"gpt-5",
-		"o3",
-		"o4-mini",
+	result, err := host.Run(ctx, host.CommandSpec{
+		Name:         tool.Path,
+		Args:         []string{"debug", "models"},
+		WorkingDir:   firstAllowedRoot(adapter.AllowedRoots),
+		AllowedRoots: adapter.AllowedRoots,
+		Timeout:      10 * time.Second,
+	})
+	options := localagents.ParseCodexDebugModels(result.Stdout)
+	live := err == nil && len(options) > 0
+	if err != nil || len(options) == 0 {
+		options = []localagents.ModelOption{
+			{ID: "default", DisplayName: "Default (CLI config)"},
+			{ID: "gpt-5.5", DisplayName: "gpt-5.5"},
+			{ID: "gpt-5.4", DisplayName: "gpt-5.4"},
+			{ID: "gpt-5.4-mini", DisplayName: "gpt-5.4-mini"},
+			{ID: "gpt-5.3-codex", DisplayName: "gpt-5.3-codex"},
+			{ID: "gpt-5.1", DisplayName: "gpt-5.1"},
+			{ID: "gpt-5.1-codex-mini", DisplayName: "gpt-5.1-codex-mini"},
+			{ID: "gpt-5-codex", DisplayName: "gpt-5-codex"},
+			{ID: "gpt-5", DisplayName: "gpt-5"},
+			{ID: "o3", DisplayName: "o3"},
+			{ID: "o4-mini", DisplayName: "o4-mini"},
+		}
 	}
-	refs := make([]adapters.ModelRef, 0, len(models))
-	for _, model := range models {
-		refs = append(refs, modelRef(model))
+
+	refs := make([]adapters.ModelRef, 0, len(options))
+	for _, option := range options {
+		refs = append(refs, modelRef(option.ID, option.DisplayName, live))
 	}
 	return refs, nil
 }
@@ -80,7 +95,7 @@ func (adapter Adapter) Run(ctx context.Context, input adapters.RunInput, emit fu
 	}
 
 	args := []string{"exec", "--json", "--skip-git-repo-check", "--sandbox", sandboxForProfile(input.PermissionProfile)}
-	if input.Model != "" {
+	if input.Model != "" && input.Model != "default" {
 		args = append(args, "--model", input.Model)
 	}
 
@@ -127,23 +142,36 @@ func sandboxForProfile(profile string) string {
 	}
 }
 
-func modelRef(model string) adapters.ModelRef {
+func modelRef(model string, displayName string, live bool) adapters.ModelRef {
+	availability := "configured_unverified"
+	source := "fallback"
+	if live {
+		availability = "listed"
+		source = "live"
+	}
 	return adapters.ModelRef{
 		ID:           "codex/" + model,
 		Adapter:      "codex",
 		Provider:     "openai",
 		Model:        model,
-		DisplayName:  model,
+		DisplayName:  displayName,
 		AuthMode:     "cli_session",
-		Availability: "configured_unverified",
-		Source:       "fallback",
+		Availability: availability,
+		Source:       source,
 		Capabilities: adapters.ModelCapability{
 			Streaming:    true,
 			Tools:        true,
 			FileEdits:    true,
 			Shell:        true,
 			JSONOutput:   true,
-			ModelListing: false,
+			ModelListing: true,
 		},
 	}
+}
+
+func firstAllowedRoot(roots []string) string {
+	if len(roots) == 0 {
+		return "."
+	}
+	return roots[0]
 }

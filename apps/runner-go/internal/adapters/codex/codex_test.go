@@ -26,6 +26,7 @@ func TestListModelsReturnsCuratedFallbacks(t *testing.T) {
 	}
 
 	expected := []string{
+		"codex/default",
 		"codex/gpt-5.5",
 		"codex/gpt-5.4",
 		"codex/gpt-5.4-mini",
@@ -41,6 +42,37 @@ func TestListModelsReturnsCuratedFallbacks(t *testing.T) {
 		if ids[id] != "fallback" {
 			t.Fatalf("expected fallback model %s, got source %q", id, ids[id])
 		}
+	}
+}
+
+func TestListModelsUsesCodexDebugModels(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := t.TempDir()
+	t.Setenv("PATH", "")
+	writeExecutable(
+		t,
+		binDir,
+		"codex",
+		"#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'codex 0.0.0\\n'; exit 0; fi\nprintf '{\"models\":[{\"slug\":\"gpt-5-live\",\"display_name\":\"GPT 5 Live\"},{\"slug\":\"hidden-model\",\"visibility\":\"hidden\"}]}'\n",
+	)
+
+	models, err := (Adapter{AllowedRoots: []string{workspace}, ToolDirs: []string{binDir}}).ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ids := map[string]adapters.ModelRef{}
+	for _, model := range models {
+		ids[model.ID] = model
+	}
+	if ids["codex/default"].Source != "live" {
+		t.Fatalf("expected default to be included in live list, got %#v", ids["codex/default"])
+	}
+	if ids["codex/gpt-5-live"].DisplayName != "GPT 5 Live" || ids["codex/gpt-5-live"].Availability != "listed" {
+		t.Fatalf("expected live debug model, got %#v", ids["codex/gpt-5-live"])
+	}
+	if _, ok := ids["codex/hidden-model"]; ok {
+		t.Fatalf("expected hidden model to be omitted")
 	}
 }
 

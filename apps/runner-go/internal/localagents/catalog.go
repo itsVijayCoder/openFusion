@@ -2,6 +2,7 @@ package localagents
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ type AgentDef struct {
 	EnvOverride      string
 	VersionArgs      []string
 	ListModelsArgs   []string
+	ListModelsParser func(string) []ModelOption
 	FallbackModels   []ModelOption
 	Provider         string
 }
@@ -65,12 +67,14 @@ func Catalog() []AgentDef {
 			),
 		},
 		{
-			ID:          "codex",
-			Name:        "Codex CLI",
-			Binary:      "codex",
-			EnvOverride: "CODEX_BIN",
-			VersionArgs: []string{"--version"},
-			Provider:    "openai",
+			ID:               "codex",
+			Name:             "Codex CLI",
+			Binary:           "codex",
+			EnvOverride:      "CODEX_BIN",
+			VersionArgs:      []string{"--version"},
+			ListModelsArgs:   []string{"debug", "models"},
+			ListModelsParser: ParseCodexDebugModels,
+			Provider:         "openai",
 			FallbackModels: models(
 				"gpt-5.5",
 				"gpt-5.4",
@@ -413,13 +417,16 @@ func listLiveModels(ctx context.Context, def AgentDef, path string, allowedRoots
 	if err != nil && result.Stdout == "" {
 		return nil
 	}
-	return parseModelLines(result.Stdout)
+	if def.ListModelsParser != nil {
+		return def.ListModelsParser(result.Stdout)
+	}
+	return ParseModelLines(result.Stdout)
 }
 
-func parseModelLines(output string) []ModelOption {
+func ParseModelLines(output string) []ModelOption {
 	lines := strings.Split(output, "\n")
-	models := make([]ModelOption, 0, len(lines))
-	seen := map[string]bool{}
+	models := []ModelOption{model("default", "Default (CLI config)")}
+	seen := map[string]bool{"default": true}
 	for _, line := range lines {
 		id := strings.TrimSpace(strings.TrimPrefix(line, "-"))
 		if id == "" {
@@ -435,7 +442,52 @@ func parseModelLines(output string) []ModelOption {
 		seen[id] = true
 		models = append(models, ModelOption{ID: id, DisplayName: id})
 	}
+	if len(models) <= 1 {
+		return nil
+	}
 	return models
+}
+
+func ParseCodexDebugModels(output string) []ModelOption {
+	var payload struct {
+		Models []struct {
+			Slug        string `json:"slug"`
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+			Name        string `json:"name"`
+			Visibility  string `json:"visibility"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		return nil
+	}
+	options := []ModelOption{model("default", "Default (CLI config)")}
+	seen := map[string]bool{"default": true}
+	for _, entry := range payload.Models {
+		if entry.Visibility == "hidden" {
+			continue
+		}
+		id := strings.TrimSpace(entry.Slug)
+		if id == "" {
+			id = strings.TrimSpace(entry.ID)
+		}
+		if id == "" || seen[id] {
+			continue
+		}
+		label := strings.TrimSpace(entry.DisplayName)
+		if label == "" {
+			label = strings.TrimSpace(entry.Name)
+		}
+		if label == "" {
+			label = id
+		}
+		seen[id] = true
+		options = append(options, ModelOption{ID: id, DisplayName: label})
+	}
+	if len(options) <= 1 {
+		return nil
+	}
+	return options
 }
 
 func modelRef(def AgentDef, option ModelOption, source string) adapters.ModelRef {
@@ -510,7 +562,7 @@ func displayName(option ModelOption) string {
 }
 
 func models(ids ...string) []ModelOption {
-	options := make([]ModelOption, 0, len(ids))
+	options := []ModelOption{model("default", "Default (CLI config)")}
 	for _, id := range ids {
 		options = append(options, ModelOption{ID: id, DisplayName: id})
 	}
@@ -518,9 +570,18 @@ func models(ids ...string) []ModelOption {
 }
 
 func labels(options ...ModelOption) []ModelOption {
-	return options
+	return ensureDefaultOption(options)
 }
 
 func model(id string, label string) ModelOption {
 	return ModelOption{ID: id, DisplayName: label}
+}
+
+func ensureDefaultOption(options []ModelOption) []ModelOption {
+	for _, option := range options {
+		if option.ID == "default" {
+			return options
+		}
+	}
+	return append([]ModelOption{model("default", "Default (CLI config)")}, options...)
 }

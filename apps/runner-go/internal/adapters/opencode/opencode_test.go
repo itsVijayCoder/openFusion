@@ -12,8 +12,8 @@ import (
 
 func TestParseModelLinesTagsLiveModels(t *testing.T) {
 	models := parseModelLines("openai/gpt-5\n- anthropic/claude-sonnet-4-5\n")
-	if len(models) != 2 {
-		t.Fatalf("expected 2 models, got %d", len(models))
+	if len(models) != 3 {
+		t.Fatalf("expected 3 models including default, got %d", len(models))
 	}
 	for _, model := range models {
 		if model.Availability != "listed" {
@@ -35,6 +35,7 @@ func TestDefaultModelsIncludeProviderSuggestions(t *testing.T) {
 	}
 
 	expected := []string{
+		"opencode/default",
 		"opencode/anthropic/claude-sonnet-4-5",
 		"opencode/openai/gpt-5",
 		"opencode/google/gemini-2.5-pro",

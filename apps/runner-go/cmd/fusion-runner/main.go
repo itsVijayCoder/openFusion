@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime"
@@ -17,7 +18,9 @@ import (
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/discovery"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/executors/docker"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/executors/host"
+	"github.com/asthrix/fusion-harness/apps/runner-go/internal/fusion"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/localagents"
+	"github.com/asthrix/fusion-harness/apps/runner-go/internal/localui"
 )
 
 const version = "0.1.0"
@@ -42,6 +45,10 @@ func main() {
 		exitOnError(runServe(os.Args[2:]))
 	case "run-test":
 		exitOnError(runTest(ctx, os.Args[2:]))
+	case "fuse":
+		exitOnError(runFuse(ctx, os.Args[2:]))
+	case "ui":
+		exitOnError(runUI(os.Args[2:]))
 	case "config":
 		exitOnError(runConfig(os.Args[2:]))
 	case "update":
@@ -53,7 +60,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("usage: fusion-runner <login|logout|doctor|discover|serve|run-test|config|update>")
+	fmt.Println("usage: fusion-runner <login|logout|doctor|discover|serve|fuse|ui|run-test|config|update>")
 }
 
 func runDoctor(ctx context.Context) error {
@@ -281,6 +288,97 @@ func runTest(ctx context.Context, args []string) error {
 	return err
 }
 
+func runFuse(ctx context.Context, args []string) error {
+	flags := flag.NewFlagSet("fuse", flag.ContinueOnError)
+	workspaceDir := flags.String("workspace", "", "workspace directory")
+	prompt := flags.String("prompt", "", "prompt text")
+	promptFile := flags.String("prompt-file", "", "file containing prompt text")
+	judgeModel := flags.String("judge-model", "", "judge model id")
+	finalModel := flags.String("final-model", "", "final writer model id")
+	mode := flags.String("mode", "required", "direct, auto, or required")
+	permissionProfile := flags.String("permission-profile", "", "readonly, workspace_write, or trusted_internal")
+	timeout := flags.Duration("timeout", 10*time.Minute, "per-model timeout")
+	asJSON := flags.Bool("json", false, "write full JSON output")
+	var analysisModels stringListFlag
+	flags.Var(&analysisModels, "analysis-model", "analysis model id; repeat for multiple panel models")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *workspaceDir == "" {
+		return fmt.Errorf("--workspace is required")
+	}
+	promptText, err := resolvePrompt(*prompt, *promptFile)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(promptText) == "" {
+		return fmt.Errorf("--prompt or --prompt-file is required")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	profile := *permissionProfile
+	if profile == "" {
+		profile = cfg.DefaultProfile
+	}
+	result, err := fusion.Execute(ctx, fusion.Request{
+		Prompt:            promptText,
+		WorkspacePath:     *workspaceDir,
+		Mode:              *mode,
+		AnalysisModels:    analysisModels,
+		JudgeModel:        *judgeModel,
+		FinalModel:        *finalModel,
+		PermissionProfile: profile,
+		TimeoutMs:         int(timeout.Milliseconds()),
+		AllowedRoots:      allowedRootsWithWorkspace(cfg.AllowedRoots, *workspaceDir),
+		ToolDirs:          cfg.ToolDirs,
+	})
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
+	}
+	if result.FinalAnswer != "" {
+		fmt.Println(result.FinalAnswer)
+		return nil
+	}
+	if result.Error != "" {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
+}
+
+func runUI(args []string) error {
+	flags := flag.NewFlagSet("ui", flag.ContinueOnError)
+	address := flags.String("addr", "127.0.0.1:7457", "local UI address")
+	workspaceDir := flags.String("workspace", "", "default workspace directory")
+	permissionProfile := flags.String("permission-profile", "", "readonly, workspace_write, or trusted_internal")
+	timeout := flags.Duration("timeout", 10*time.Minute, "per-model timeout")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	cfg.AllowedRoots = allowedRootsWithWorkspace(cfg.AllowedRoots, *workspaceDir)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	fmt.Printf("Open %s in your browser\n", localui.FormatAddress(*address))
+	return localui.Serve(ctx, localui.Options{
+		Address:           *address,
+		WorkspacePath:     *workspaceDir,
+		PermissionProfile: *permissionProfile,
+		Timeout:           *timeout,
+		Config:            cfg,
+	})
+}
+
 func buildDiscoveryReport(ctx context.Context) (discovery.Report, error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -362,4 +460,53 @@ func exitOnError(err error) {
 	}
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
+}
+
+type stringListFlag []string
+
+func (value *stringListFlag) String() string {
+	return strings.Join(*value, ",")
+}
+
+func (value *stringListFlag) Set(item string) error {
+	trimmed := strings.TrimSpace(item)
+	if trimmed == "" {
+		return fmt.Errorf("model id cannot be empty")
+	}
+	*value = append(*value, trimmed)
+	return nil
+}
+
+func resolvePrompt(prompt string, promptFile string) (string, error) {
+	if prompt != "" {
+		return prompt, nil
+	}
+	if promptFile != "" {
+		data, err := os.ReadFile(promptFile)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+	stat, err := os.Stdin.Stat()
+	if err == nil && stat.Mode()&os.ModeCharDevice == 0 {
+		data, readErr := io.ReadAll(os.Stdin)
+		if readErr != nil {
+			return "", readErr
+		}
+		return string(data), nil
+	}
+	return "", nil
+}
+
+func allowedRootsWithWorkspace(roots []string, workspaceDir string) []string {
+	if strings.TrimSpace(workspaceDir) == "" {
+		return roots
+	}
+	for _, root := range roots {
+		if root == workspaceDir {
+			return roots
+		}
+	}
+	return append(append([]string{}, roots...), workspaceDir)
 }

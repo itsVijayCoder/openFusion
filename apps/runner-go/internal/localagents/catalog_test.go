@@ -71,6 +71,23 @@ func TestListModelsUsesLiveModelListing(t *testing.T) {
 	}
 }
 
+func TestParseCodexDebugModels(t *testing.T) {
+	models := ParseCodexDebugModels(`{"models":[{"slug":"gpt-5-live","display_name":"GPT 5 Live"},{"id":"o4-mini"},{"slug":"hidden","visibility":"hidden"}]}`)
+
+	if len(models) != 3 {
+		t.Fatalf("expected default plus 2 visible models, got %d", len(models))
+	}
+	if models[0].ID != "default" {
+		t.Fatalf("expected default option first, got %q", models[0].ID)
+	}
+	if models[1].ID != "gpt-5-live" || models[1].DisplayName != "GPT 5 Live" {
+		t.Fatalf("expected display name from debug payload, got %#v", models[1])
+	}
+	if models[2].ID != "o4-mini" {
+		t.Fatalf("expected id fallback, got %#v", models[2])
+	}
+}
+
 func writeExecutable(t *testing.T, dir string, name string, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
