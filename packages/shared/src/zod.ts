@@ -107,6 +107,7 @@ export const modelCapabilitiesSchema = z.object({
 
 export const modelRefSchema = z.object({
   id: z.string().min(1),
+  runnerId: z.string().optional(),
   adapter: adapterIdSchema,
   provider: z.string().optional(),
   model: z.string().min(1),

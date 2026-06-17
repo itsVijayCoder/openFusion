@@ -215,6 +215,8 @@ function inferProvider(adapter: AdapterId, model: string) {
     kimi: "moonshotai",
     "grok-build": "xai",
     reasonix: "deepseek",
+    openrouter: "openrouter",
+    "openrouter-fusion": "openrouter",
   };
   if (adapterProvider[adapter]) return adapterProvider[adapter];
   const [provider] = model.split("/");
@@ -246,6 +248,8 @@ function isAdapterId(value: string): value is AdapterId {
     value === "codebuddy" ||
     value === "reasonix" ||
     value === "antigravity" ||
+    value === "openrouter" ||
+    value === "openrouter-fusion" ||
     value === "api-key" ||
     value === "cloudflare-ai-gateway"
   );

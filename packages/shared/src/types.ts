@@ -86,6 +86,7 @@ export type ChatMessage = {
 
 export type ModelRef = {
   id: string;
+  runnerId?: string;
   adapter: AdapterId;
   provider?: string;
   model: string;

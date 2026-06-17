@@ -945,6 +945,7 @@ function mapTool(row: ToolRow): ToolRef {
 function mapModel(row: ModelRow): ModelRef {
   return {
     id: row.id,
+    runnerId: optional(row.runner_id),
     adapter: row.adapter,
     provider: optional(row.provider),
     model: row.model,
