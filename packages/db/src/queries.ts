@@ -54,6 +54,8 @@ export type CreateFusionRunInput = {
   permissionProfile: PermissionProfile;
   promptObjectKey?: string;
   executionPlan?: FusionExecutionPlan;
+  parentRunId?: string;
+  conversationId?: string;
   status?: FusionRunSummary["status"];
   createdAt: string;
 };
@@ -179,6 +181,8 @@ type FusionRunRow = {
   judge_object_key: string | null;
   final_object_key: string | null;
   execution_plan_json: string | null;
+  parent_run_id: string | null;
+  conversation_id: string | null;
   error: string | null;
   created_at: string;
   started_at: string | null;
@@ -369,14 +373,28 @@ export async function getFusionRunDetail(db: D1DatabaseLike, orgId: string, runI
   };
 }
 
+export async function listRunsByConversation(db: D1DatabaseLike, orgId: string, conversationId: string): Promise<FusionRunSummary[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT * FROM fusion_runs
+       WHERE org_id = ? AND conversation_id = ?
+       ORDER BY created_at ASC`,
+    )
+    .bind(orgId, conversationId)
+    .all<FusionRunRow>();
+
+  return results.map(mapFusionRun);
+}
+
 export async function createFusionRun(db: D1DatabaseLike, input: CreateFusionRunInput) {
   return db
     .prepare(
       `INSERT INTO fusion_runs (
          id, org_id, workspace_id, user_id, runner_id, status, mode, preset,
-         permission_profile, prompt_object_key, execution_plan_json, created_at
+         permission_profile, prompt_object_key, execution_plan_json,
+         parent_run_id, conversation_id, created_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       input.id,
@@ -390,6 +408,8 @@ export async function createFusionRun(db: D1DatabaseLike, input: CreateFusionRun
       input.permissionProfile,
       input.promptObjectKey ?? null,
       input.executionPlan ? JSON.stringify(input.executionPlan) : null,
+      input.parentRunId ?? null,
+      input.conversationId ?? null,
       input.createdAt,
     )
     .run();
@@ -1010,6 +1030,8 @@ function mapFusionRun(row: FusionRunRow): FusionRunSummary {
     judgeObjectKey: optional(row.judge_object_key),
     finalObjectKey: optional(row.final_object_key),
     executionPlan: parseJson<FusionExecutionPlan | undefined>(row.execution_plan_json, undefined),
+    parentRunId: optional(row.parent_run_id),
+    conversationId: optional(row.conversation_id),
     error: optional(row.error),
     createdAt: row.created_at,
     startedAt: optional(row.started_at),

@@ -12,11 +12,13 @@ import {
   RiSettings3Line,
   RiShieldCheckLine,
   RiStackLine,
+  RiSunLine,
 } from "@remixicon/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/features/theme/theme-provider";
 
 const navGroups = [
   {
@@ -52,20 +54,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f8fa] text-zinc-950">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-zinc-200 bg-[#eef0f3] lg:block">
+    <div className="min-h-screen bg-background text-foreground">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-border bg-sidebar lg:block">
         <div className="flex h-full flex-col">
           <Link href="/" className="flex h-16 items-center gap-3 px-5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-black text-white">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <RiRobot2Line aria-hidden className="size-5" />
             </span>
-            <span className="truncate text-sm font-semibold text-zinc-900">Fusion</span>
+            <span className="truncate text-sm font-semibold text-sidebar-foreground">Fusion</span>
           </Link>
 
           <nav className="flex flex-1 flex-col gap-5 px-2">
             {navGroups.map((group) => (
               <div key={group.label} className="flex flex-col gap-1">
-                <span className="px-3 text-xs font-medium text-zinc-400">{group.label}</span>
+                <span className="px-3 text-xs font-medium text-muted-foreground">{group.label}</span>
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
@@ -74,11 +76,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                       key={item.href}
                       href={item.href}
                       className={cn(
-                        "flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-950",
-                        active && "bg-zinc-200 text-zinc-950",
+                        "flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        active && "bg-sidebar-accent text-sidebar-accent-foreground",
                       )}
                     >
-                      <Icon aria-hidden className="size-4 text-zinc-500" />
+                      <Icon aria-hidden className="size-4 text-muted-foreground" />
                       <span className="truncate">{item.label}</span>
                     </Link>
                   );
@@ -87,15 +89,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          <div className="border-t border-zinc-200 p-2">
+          <div className="border-t border-border p-2">
             <div className="flex items-center gap-2">
-              <Link href="/chat" className="flex h-9 flex-1 items-center gap-2 rounded-md bg-zinc-200 px-3 text-sm font-medium text-zinc-700 hover:text-zinc-950">
+              <Link href="/chat" className="flex h-9 flex-1 items-center gap-2 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground hover:text-sidebar-accent-foreground">
                 <RiRobot2Line aria-hidden className="size-4" />
                 Back to Chat
               </Link>
-              <button type="button" aria-label="Appearance" className="flex size-9 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-200 hover:text-zinc-950">
-                <RiMoonLine aria-hidden className="size-4" />
-              </button>
+              <ThemeToggle />
             </div>
           </div>
         </div>
@@ -103,13 +103,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="lg:pl-64">
         <div className="flex min-h-screen flex-col">
-          <div className="flex h-14 items-center gap-2 border-b border-zinc-200 bg-[#eef0f3] px-4 lg:hidden">
-            <Link href="/" className="text-sm font-semibold">
+          <div className="flex h-14 items-center gap-2 border-b border-border bg-sidebar px-4 lg:hidden">
+            <Link href="/" className="text-sm font-semibold text-foreground">
               Fusion
             </Link>
             <nav className="ml-auto flex gap-1 overflow-x-auto">
               {navGroups[0].items.slice(0, 5).map((item) => (
-                <Link key={item.href} href={item.href} className="rounded-md px-2 py-1 text-xs text-zinc-500">
+                <Link key={item.href} href={item.href} className="rounded-md px-2 py-1 text-xs text-muted-foreground">
                   {item.label}
                 </Link>
               ))}
@@ -119,5 +119,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <button
+      type="button"
+      aria-label="Toggle theme"
+      onClick={toggleTheme}
+      className="flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+    >
+      {theme === "dark" ? <RiSunLine aria-hidden className="size-4" /> : <RiMoonLine aria-hidden className="size-4" />}
+    </button>
   );
 }

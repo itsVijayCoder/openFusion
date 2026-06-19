@@ -1,10 +1,10 @@
 import { createAuditEvent, getFusionRunDetail, listFusionRuns, listRunEvents, updateFusionRunStatus } from "@fusion-harness/db";
-import { approvalRequestSchema, formatEntityId, fusionRunRequestSchema } from "@fusion-harness/shared";
+import { approvalRequestSchema, formatEntityId, fusionContinueRequestSchema, fusionRunRequestSchema } from "@fusion-harness/shared";
 import { Hono } from "hono";
 import type { AppBindings } from "../env";
 import { recordApproval } from "../services/approvals";
 import { requireAccessIdentity } from "../services/auth";
-import { createRunFromRequest, notifyFusionRunObject, reconcileFusionRun, RunCreationError } from "../services/runs";
+import { continueRun, createRunFromRequest, loadRunMessages, notifyFusionRunObject, reconcileFusionRun, RunCreationError } from "../services/runs";
 
 export const fusionRunRoutes = new Hono<AppBindings>()
   .get("/", async (c) => {
@@ -27,7 +27,9 @@ export const fusionRunRoutes = new Hono<AppBindings>()
       return c.json({ error: "Run not found" }, 404);
     }
 
-    return c.json(run);
+    const messages = await loadRunMessages(c.env, run.promptObjectKey);
+
+    return c.json({ ...run, messages });
   })
   .get("/:id/events", async (c) => {
     const runId = c.req.param("id");
@@ -46,6 +48,14 @@ export const fusionRunRoutes = new Hono<AppBindings>()
         limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 1000) : 1000,
       }),
     });
+  })
+  .post("/:id/continue", async (c) => {
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const runId = c.req.param("id");
+    const body = fusionContinueRequestSchema.parse(await c.req.json());
+    const { run, promptObjectKey } = await continueRun(c.env, principal, runId, body.message);
+
+    return c.json({ ...run, promptObjectKey }, 202);
   })
   .post("/:id/approve", async (c) => {
     const principal = requireAccessIdentity(c.req.raw.headers);

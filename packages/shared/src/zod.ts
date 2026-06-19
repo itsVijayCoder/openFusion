@@ -173,6 +173,10 @@ export const fusionRunRequestSchema = z.object({
   timeoutMs: z.number().int().positive().optional(),
 });
 
+export const fusionContinueRequestSchema = z.object({
+  message: z.string().min(1),
+});
+
 export const fusionExecutionStepSchema = z.object({
   id: z.string().min(1),
   kind: runnerJobKindSchema,

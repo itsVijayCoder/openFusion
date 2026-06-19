@@ -90,6 +90,8 @@ CREATE TABLE fusion_runs (
   judge_object_key TEXT,
   final_object_key TEXT,
   execution_plan_json TEXT,
+  parent_run_id TEXT,
+  conversation_id TEXT,
   error TEXT,
   created_at TEXT NOT NULL,
   started_at TEXT,
@@ -212,6 +214,7 @@ CREATE TABLE audit_events (
 CREATE INDEX idx_runners_org_status ON runners(org_id, status);
 CREATE INDEX idx_models_org_adapter ON models(org_id, adapter);
 CREATE INDEX idx_fusion_runs_org_created ON fusion_runs(org_id, created_at DESC);
+CREATE INDEX idx_fusion_runs_conversation ON fusion_runs(conversation_id, created_at);
 CREATE INDEX idx_panel_outputs_run ON panel_outputs(run_id);
 CREATE INDEX idx_runner_jobs_runner_status ON runner_jobs(runner_id, status, created_at);
 CREATE INDEX idx_runner_jobs_run ON runner_jobs(run_id, created_at);

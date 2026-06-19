@@ -212,6 +212,8 @@ export type FusionRunSummary = {
   judgeObjectKey?: string;
   finalObjectKey?: string;
   executionPlan?: FusionExecutionPlan;
+  parentRunId?: string;
+  conversationId?: string;
   error?: string;
   createdAt: string;
   startedAt?: string;
@@ -222,6 +224,7 @@ export type FusionRunDetail = FusionRunSummary & {
   panelOutputs: PanelOutputRef[];
   artifacts: ArtifactRef[];
   auditEvents: AuditEventRef[];
+  messages?: ChatMessage[];
 };
 
 export type RunnerRegistrationRequest = {
@@ -324,4 +327,8 @@ export type FusionRunRequest = {
   finalModel?: string;
   stream?: boolean;
   timeoutMs?: number;
+};
+
+export type FusionContinueRequest = {
+  message: string;
 };

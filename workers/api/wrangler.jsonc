@@ -25,6 +25,12 @@
       "id": "34fa55d3717f4f4fa4fb7c3817a30536"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS",
+      "bucket_name": "fusion-harness-artifacts"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {

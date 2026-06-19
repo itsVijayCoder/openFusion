@@ -18,6 +18,7 @@ import {
 import {
   extractReadableOutput,
   formatEntityId,
+  type ChatMessage,
   type ClaimedRunnerJob,
   type FusionExecutionPlan,
   type FusionExecutionStep,
@@ -42,19 +43,29 @@ type CreateRunResult = {
   promptObjectKey: string;
 };
 
+type CreateRunOptions = {
+  parentRunId?: string;
+  conversationId?: string;
+};
+
 const panelRoles = ["architect", "critic", "implementer", "risk-reviewer", "test-planner", "maintainer"];
 
 export class RunCreationError extends Error {
   constructor(
     message: string,
-    readonly statusCode: 400 | 409 | 422 = 409,
+    readonly statusCode: 400 | 404 | 409 | 422 = 409,
   ) {
     super(message);
     this.name = "RunCreationError";
   }
 }
 
-export async function createRunFromRequest(env: Env, principal: AccessIdentity, payload: FusionRunRequest): Promise<CreateRunResult> {
+export async function createRunFromRequest(
+  env: Env,
+  principal: AccessIdentity,
+  payload: FusionRunRequest,
+  options?: CreateRunOptions,
+): Promise<CreateRunResult> {
   const now = new Date().toISOString();
   const runId = formatEntityId("run", crypto.randomUUID());
   const promptObjectKey = buildArtifactKey(principal.orgId, runId, "prompt.json");
@@ -115,6 +126,8 @@ export async function createRunFromRequest(env: Env, principal: AccessIdentity, 
     permissionProfile: payload.permissionProfile,
     promptObjectKey,
     executionPlan: plan,
+    parentRunId: options?.parentRunId,
+    conversationId: options?.conversationId,
     createdAt: now,
   });
 
@@ -223,6 +236,85 @@ export async function createRunFromRequest(env: Env, principal: AccessIdentity, 
   }
 
   return { run, promptObjectKey };
+}
+
+export async function continueRun(
+  env: Env,
+  principal: AccessIdentity,
+  parentRunId: string,
+  message: string,
+): Promise<CreateRunResult> {
+  const parentRun = await getFusionRun(env.DB, principal.orgId, parentRunId);
+  if (!parentRun) {
+    throw new RunCreationError("Parent run not found", 404);
+  }
+
+  if (parentRun.status !== "completed" && parentRun.status !== "failed") {
+    throw new RunCreationError("Parent run must be completed before continuing", 409);
+  }
+
+  const parentRequest = await loadRunRequest(env, parentRun.promptObjectKey);
+  if (!parentRequest) {
+    throw new RunCreationError("Parent run prompt was not found", 422);
+  }
+
+  const finalOutput = await getRunFinalOutput(env, principal.orgId, parentRunId);
+
+  const messages: ChatMessage[] = [
+    ...parentRequest.messages,
+    { role: "assistant", content: finalOutput || "(No output was produced)" },
+    { role: "user", content: message },
+  ];
+
+  const conversationId = parentRun.conversationId ?? parentRun.id;
+
+  const payload: FusionRunRequest = {
+    ...parentRequest,
+    messages,
+  };
+
+  return createRunFromRequest(env, principal, payload, {
+    parentRunId,
+    conversationId,
+  });
+}
+
+export async function loadRunMessages(env: Env, promptObjectKey: string | undefined): Promise<ChatMessage[]> {
+  const request = await loadRunRequest(env, promptObjectKey);
+  return request?.messages ?? [];
+}
+
+async function getRunFinalOutput(env: Env, orgId: string, runId: string): Promise<string> {
+  const events = await listRunEvents(env.DB, orgId, runId, { limit: 1000 });
+
+  let finalText = "";
+  let synthesisText = "";
+
+  for (const event of events) {
+    const text = extractReadableOutput(eventStringData(event, "text") || eventStringData(event, "outputText"));
+    if (event.type === "final.delta" || event.type === "final.completed") {
+      finalText += text;
+    }
+    if (event.type === "judge.output.delta" || event.type === "judge.completed") {
+      synthesisText += text;
+    }
+  }
+
+  if (finalText.trim()) return finalText.trim();
+  return extractFinalOutput(synthesisText);
+}
+
+function eventStringData(event: RunEvent, key: string): string {
+  const value = event.data[key];
+  return typeof value === "string" ? value : "";
+}
+
+function extractFinalOutput(text: string): string {
+  const marker = "FINAL_OUTPUT:";
+  const trimmed = text.trim();
+  const markerIndex = trimmed.lastIndexOf(marker);
+  if (markerIndex < 0) return trimmed;
+  return trimmed.slice(markerIndex + marker.length).trim();
 }
 
 export async function advanceFusionRunAfterJob(env: Env, orgId: string, completedJob: RunnerJob, now = new Date().toISOString()) {

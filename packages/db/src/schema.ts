@@ -96,12 +96,17 @@ export const fusionRuns = sqliteTable(
     judgeObjectKey: text("judge_object_key"),
     finalObjectKey: text("final_object_key"),
     executionPlanJson: text("execution_plan_json"),
+    parentRunId: text("parent_run_id"),
+    conversationId: text("conversation_id"),
     error: text("error"),
     createdAt: text("created_at").notNull(),
     startedAt: text("started_at"),
     completedAt: text("completed_at"),
   },
-  (table) => [index("idx_fusion_runs_org_created").on(table.orgId, table.createdAt)],
+  (table) => [
+    index("idx_fusion_runs_org_created").on(table.orgId, table.createdAt),
+    index("idx_fusion_runs_conversation").on(table.conversationId, table.createdAt),
+  ],
 );
 
 export const panelOutputs = sqliteTable(
