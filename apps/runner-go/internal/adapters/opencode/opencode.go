@@ -151,13 +151,7 @@ func parseModelLines(output string) []adapters.ModelRef {
 
 func defaultModels() []adapters.ModelRef {
 	return []adapters.ModelRef{
-		modelRef("default", "configured_unverified", "fallback"),
-		modelRef("anthropic/claude-sonnet-4-5", "configured_unverified", "fallback"),
-		modelRef("openai/gpt-5", "configured_unverified", "fallback"),
-		modelRef("google/gemini-2.5-pro", "configured_unverified", "fallback"),
-		modelRef("minimax/minimax-m1", "configured_unverified", "suggested"),
-		modelRef("deepseek/deepseek-chat", "configured_unverified", "suggested"),
-		modelRef("moonshotai/kimi-k2", "configured_unverified", "suggested"),
+		modelRef("default", "detected", "live"),
 	}
 }
 

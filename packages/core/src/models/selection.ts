@@ -114,19 +114,16 @@ function buildSelection(
 ): SelectedFusionModels {
   const panel = models.slice(0, Math.max(1, limit));
   const fallbackAdapter = overrides.fallbackAdapter ?? panel[0]?.adapter;
-  const requestedJudge = overrides.requestedJudgeModel
-    ? resolveRequestedModel(overrides.availableModels, overrides.requestedJudgeModel, fallbackAdapter)
-    : undefined;
-  const requestedFinal = overrides.requestedFinalModel
-    ? resolveRequestedModel(overrides.availableModels, overrides.requestedFinalModel, fallbackAdapter)
+  const requestedJudgeModel = overrides.requestedJudgeModel ?? overrides.requestedFinalModel;
+  const requestedJudge = requestedJudgeModel
+    ? resolveRequestedModel(overrides.availableModels, requestedJudgeModel, fallbackAdapter)
     : undefined;
   const judge = requestedJudge && isUsable(requestedJudge) ? requestedJudge : pickJudge(panel);
-  const final = requestedFinal && isUsable(requestedFinal) ? requestedFinal : pickFinal(panel);
 
   return {
     panel,
     judge,
-    final,
+    final: judge,
   };
 }
 
@@ -146,14 +143,6 @@ function groupScore(models: ModelRef[]) {
 
 function pickJudge(panel: ModelRef[]) {
   return [...panel].sort((a, b) => Number(b.capabilities.jsonOutput) - Number(a.capabilities.jsonOutput) || scoreModel(b) - scoreModel(a))[0];
-}
-
-function pickFinal(panel: ModelRef[]) {
-  return [...panel].sort(
-    (a, b) =>
-      Number(b.capabilities.fileEdits || b.capabilities.tools) - Number(a.capabilities.fileEdits || a.capabilities.tools) ||
-      scoreModel(b) - scoreModel(a),
-  )[0];
 }
 
 function filterByPreset(models: ModelRef[], adapters?: AdapterId[]) {

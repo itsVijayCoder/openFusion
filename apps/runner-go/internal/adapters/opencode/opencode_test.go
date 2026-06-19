@@ -25,31 +25,13 @@ func TestParseModelLinesTagsLiveModels(t *testing.T) {
 	}
 }
 
-func TestDefaultModelsIncludeProviderSuggestions(t *testing.T) {
+func TestDefaultModelsOnlyIncludeCliDefault(t *testing.T) {
 	models := defaultModels()
-	ids := map[string]bool{}
-	sources := map[string]string{}
-	for _, model := range models {
-		ids[model.ID] = true
-		sources[model.ID] = model.Source
+	if len(models) != 1 {
+		t.Fatalf("expected only default model, got %#v", models)
 	}
-
-	expected := []string{
-		"opencode/default",
-		"opencode/anthropic/claude-sonnet-4-5",
-		"opencode/openai/gpt-5",
-		"opencode/google/gemini-2.5-pro",
-		"opencode/minimax/minimax-m1",
-		"opencode/deepseek/deepseek-chat",
-		"opencode/moonshotai/kimi-k2",
-	}
-	for _, id := range expected {
-		if !ids[id] {
-			t.Fatalf("expected default model %s", id)
-		}
-	}
-	if sources["opencode/minimax/minimax-m1"] != "suggested" {
-		t.Fatalf("expected minimax fallback to be suggested, got %q", sources["opencode/minimax/minimax-m1"])
+	if models[0].ID != "opencode/default" || models[0].Source != "live" || models[0].Availability != "detected" {
+		t.Fatalf("expected detected CLI default model, got %#v", models[0])
 	}
 }
 

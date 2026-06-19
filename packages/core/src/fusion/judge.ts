@@ -10,6 +10,7 @@ export type JudgeResult = {
   unique_insights: Array<{ model: string; insight: string }>;
   risks: Array<{ risk: string; severity: "low" | "medium" | "high"; mitigation: string }>;
   confidence: number;
+  synthesis_strategy: string;
   recommended_final_strategy: string;
 };
 
@@ -27,13 +28,14 @@ export function createEmptyJudgeResult(reason: string): JudgeResult {
       },
     ],
     confidence: 0,
+    synthesis_strategy: "Proceed conservatively and disclose that judge analysis was incomplete.",
     recommended_final_strategy: "Proceed conservatively and disclose that judge analysis was incomplete.",
   };
 }
 
 export function parseJudgeResult(value: string): JudgeResult {
   try {
-    return normalizeJudgeResult(JSON.parse(value) as Partial<JudgeResult>);
+    return normalizeJudgeResult(JSON.parse(extractJudgeAnalysisJson(value)) as Partial<JudgeResult>);
   } catch {
     return createEmptyJudgeResult("Judge output was not valid JSON.");
   }
@@ -65,8 +67,25 @@ export function normalizeJudgeResult(value: Partial<JudgeResult>): JudgeResult {
         }))
       : [],
     confidence: clampConfidence(value.confidence),
-    recommended_final_strategy: String(value.recommended_final_strategy ?? "Use the strongest supported answer from the panel outputs."),
+    synthesis_strategy: String(value.synthesis_strategy ?? value.recommended_final_strategy ?? "Use the strongest supported answer from the panel outputs."),
+    recommended_final_strategy: String(value.recommended_final_strategy ?? value.synthesis_strategy ?? "Use the strongest supported answer from the panel outputs."),
   };
+}
+
+export function extractFinalOutput(value: string) {
+  const marker = "FINAL_OUTPUT:";
+  const text = value.trim();
+  const markerIndex = text.lastIndexOf(marker);
+  if (markerIndex < 0) return text;
+  return text.slice(markerIndex + marker.length).trim();
+}
+
+function extractJudgeAnalysisJson(value: string) {
+  const analysisMarker = "JUDGE_ANALYSIS_JSON:";
+  const finalMarker = "FINAL_OUTPUT:";
+  const withAnalysisMarker = value.includes(analysisMarker) ? value.slice(value.indexOf(analysisMarker) + analysisMarker.length) : value;
+  const withoutFinal = withAnalysisMarker.includes(finalMarker) ? withAnalysisMarker.slice(0, withAnalysisMarker.indexOf(finalMarker)) : withAnalysisMarker;
+  return withoutFinal.trim();
 }
 
 function toStringArray(value: unknown) {

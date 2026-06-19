@@ -1,5 +1,5 @@
 import type { FusionRunRequest, ModelRef } from "@fusion-harness/shared";
-import { buildFinalWriterPrompt, buildJudgePrompt, buildPanelPrompt } from "./prompt-builder";
+import { buildJudgeSynthesisPrompt, buildPanelPrompt } from "./prompt-builder";
 import { classifyFusionNeed } from "./planner";
 import { selectFusionModels } from "../models/selection";
 
@@ -19,11 +19,6 @@ export type FusionPlanStep =
     }
   | {
       kind: "judge";
-      model?: ModelRef;
-      prompt: string;
-    }
-  | {
-      kind: "final";
       model?: ModelRef;
       prompt: string;
     };
@@ -92,12 +87,7 @@ export function buildFusionExecutionPlan(request: FusionRunRequest, availableMod
       {
         kind: "judge",
         model: models.judge,
-        prompt: buildJudgePrompt(userPrompt),
-      },
-      {
-        kind: "final",
-        model: models.final,
-        prompt: buildFinalWriterPrompt(userPrompt),
+        prompt: buildJudgeSynthesisPrompt(userPrompt),
       },
     ],
   };

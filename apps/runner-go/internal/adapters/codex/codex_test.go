@@ -10,7 +10,7 @@ import (
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/adapters"
 )
 
-func TestListModelsReturnsCuratedFallbacks(t *testing.T) {
+func TestListModelsReturnsOnlyCliDefaultWhenListingFails(t *testing.T) {
 	dir := t.TempDir()
 	writeExecutable(t, dir, "codex")
 	t.Setenv("PATH", "")
@@ -20,28 +20,11 @@ func TestListModelsReturnsCuratedFallbacks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ids := map[string]string{}
-	for _, model := range models {
-		ids[model.ID] = model.Source
+	if len(models) != 1 {
+		t.Fatalf("expected only default model, got %#v", models)
 	}
-
-	expected := []string{
-		"codex/default",
-		"codex/gpt-5.5",
-		"codex/gpt-5.4",
-		"codex/gpt-5.4-mini",
-		"codex/gpt-5.3-codex",
-		"codex/gpt-5.1",
-		"codex/gpt-5.1-codex-mini",
-		"codex/gpt-5-codex",
-		"codex/gpt-5",
-		"codex/o3",
-		"codex/o4-mini",
-	}
-	for _, id := range expected {
-		if ids[id] != "fallback" {
-			t.Fatalf("expected fallback model %s, got source %q", id, ids[id])
-		}
+	if models[0].ID != "codex/default" || models[0].Source != "live" || models[0].Availability != "detected" {
+		t.Fatalf("expected detected CLI default model, got %#v", models[0])
 	}
 }
 

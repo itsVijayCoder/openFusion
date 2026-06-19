@@ -72,16 +72,6 @@ func (adapter Adapter) ListModels(ctx context.Context) ([]adapters.ModelRef, err
 	if err != nil || len(options) == 0 {
 		options = []localagents.ModelOption{
 			{ID: "default", DisplayName: "Default (CLI config)"},
-			{ID: "gpt-5.5", DisplayName: "gpt-5.5"},
-			{ID: "gpt-5.4", DisplayName: "gpt-5.4"},
-			{ID: "gpt-5.4-mini", DisplayName: "gpt-5.4-mini"},
-			{ID: "gpt-5.3-codex", DisplayName: "gpt-5.3-codex"},
-			{ID: "gpt-5.1", DisplayName: "gpt-5.1"},
-			{ID: "gpt-5.1-codex-mini", DisplayName: "gpt-5.1-codex-mini"},
-			{ID: "gpt-5-codex", DisplayName: "gpt-5-codex"},
-			{ID: "gpt-5", DisplayName: "gpt-5"},
-			{ID: "o3", DisplayName: "o3"},
-			{ID: "o4-mini", DisplayName: "o4-mini"},
 		}
 	}
 
@@ -148,10 +138,11 @@ func sandboxForProfile(profile string) string {
 
 func modelRef(model string, displayName string, live bool) adapters.ModelRef {
 	availability := "configured_unverified"
-	source := "fallback"
+	source := "live"
 	if live {
 		availability = "listed"
-		source = "live"
+	} else {
+		availability = "detected"
 	}
 	return adapters.ModelRef{
 		ID:           "codex/" + model,

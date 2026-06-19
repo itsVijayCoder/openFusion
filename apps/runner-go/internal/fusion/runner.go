@@ -16,12 +16,14 @@ import (
 )
 
 type Request struct {
-	RunID             string            `json:"runId,omitempty"`
-	Prompt            string            `json:"prompt"`
-	WorkspacePath     string            `json:"workspacePath"`
-	Mode              string            `json:"mode"`
-	AnalysisModels    []string          `json:"analysisModels"`
-	JudgeModel        string            `json:"judgeModel,omitempty"`
+	RunID          string   `json:"runId,omitempty"`
+	Prompt         string   `json:"prompt"`
+	WorkspacePath  string   `json:"workspacePath"`
+	Mode           string   `json:"mode"`
+	AnalysisModels []string `json:"analysisModels"`
+	JudgeModel     string   `json:"judgeModel,omitempty"`
+	// FinalModel is accepted for older clients, but the current flow uses the
+	// judge model as the synthesis/final model.
 	FinalModel        string            `json:"finalModel,omitempty"`
 	PermissionProfile string            `json:"permissionProfile"`
 	TimeoutMs         int               `json:"timeoutMs"`
@@ -31,15 +33,17 @@ type Request struct {
 }
 
 type Result struct {
-	RunID       string        `json:"runId"`
-	Status      string        `json:"status"`
-	Mode        string        `json:"mode"`
-	Panel       []ModelOutput `json:"panel"`
-	Judge       *ModelOutput  `json:"judge,omitempty"`
-	Final       *ModelOutput  `json:"final,omitempty"`
-	FinalAnswer string        `json:"finalAnswer"`
-	Error       string        `json:"error,omitempty"`
-	LatencyMs   int64         `json:"latencyMs"`
+	RunID  string        `json:"runId"`
+	Status string        `json:"status"`
+	Mode   string        `json:"mode"`
+	Panel  []ModelOutput `json:"panel"`
+	Judge  *ModelOutput  `json:"judge,omitempty"`
+	// Final is retained for response compatibility. New fusion runs complete in
+	// the judge/synthesis step and expose the user-facing answer in FinalAnswer.
+	Final       *ModelOutput `json:"final,omitempty"`
+	FinalAnswer string       `json:"finalAnswer"`
+	Error       string       `json:"error,omitempty"`
+	LatencyMs   int64        `json:"latencyMs"`
 }
 
 type ModelOutput struct {
@@ -139,24 +143,18 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 		}, nil
 	}
 
-	judgeSelection := resolveModel(req.JudgeModel, successfulPanel[0].Adapter)
+	judgeModelID := req.JudgeModel
+	if judgeModelID == "" {
+		judgeModelID = req.FinalModel
+	}
+	judgeSelection := resolveModel(judgeModelID, successfulPanel[0].Adapter)
 	if judgeSelection.ID == "" {
 		judgeSelection = resolveModel(successfulPanel[0].ModelID, "")
 	}
-	judge := runSelectedModel(ctx, req, judgeSelection, buildJudgePrompt(req.Prompt, successfulPanel), "judge")
+	judge := runSelectedModel(ctx, req, judgeSelection, buildJudgeSynthesisPrompt(req.Prompt, successfulPanel), "judge_synthesis")
 
-	finalDefaultAdapter := judge.Adapter
-	if finalDefaultAdapter == "" {
-		finalDefaultAdapter = successfulPanel[0].Adapter
-	}
-	finalSelection := resolveModel(req.FinalModel, finalDefaultAdapter)
-	if finalSelection.ID == "" {
-		finalSelection = resolveModel(judge.ModelID, "")
-	}
-	final := runSelectedModel(ctx, req, finalSelection, buildFinalPrompt(req.Prompt, successfulPanel, judge.OutputText), "final")
-
-	status := final.Status
-	errText := final.Error
+	status := judge.Status
+	errText := judge.Error
 	if status == "" {
 		status = "failed"
 	}
@@ -167,8 +165,7 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 		Mode:        mode,
 		Panel:       panel,
 		Judge:       &judge,
-		Final:       &final,
-		FinalAnswer: final.OutputText,
+		FinalAnswer: extractFinalOutput(judge.OutputText),
 		Error:       errText,
 		LatencyMs:   time.Since(start).Milliseconds(),
 	}, nil
@@ -242,9 +239,6 @@ func defaultAnalysisModels(ctx context.Context, allowedRoots []string, toolDirs 
 	supported := make([]string, 0, len(models))
 	for _, model := range models {
 		if model.Adapter != "opencode" && model.Adapter != "codex" {
-			continue
-		}
-		if model.Model == "default" {
 			continue
 		}
 		if model.Availability == "unavailable" || model.AuthMode == "unknown" {

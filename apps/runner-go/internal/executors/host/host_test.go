@@ -40,6 +40,24 @@ func TestRunWritesStdin(t *testing.T) {
 	}
 }
 
+func TestRunPreservesUserEnvironment(t *testing.T) {
+	root := t.TempDir()
+	command := writeExecutable(t, root, "env-check", "#!/bin/sh\nprintf '%s' \"$FUSION_HOST_TEST_KEY\"\n")
+	t.Setenv("FUSION_HOST_TEST_KEY", "available-to-native-cli")
+
+	result, err := Run(context.Background(), CommandSpec{
+		Name:         command,
+		WorkingDir:   root,
+		AllowedRoots: []string{root},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Stdout != "available-to-native-cli" {
+		t.Fatalf("expected user environment to be available, got %q", result.Stdout)
+	}
+}
+
 func writeExecutable(t *testing.T, dir string, name string, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)

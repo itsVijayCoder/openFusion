@@ -685,7 +685,7 @@ export async function listModels(db: D1DatabaseLike, orgId: string): Promise<Mod
     .bind(orgId)
     .all<ModelRow>();
 
-  return results.map(mapModel);
+  return results.map(mapModel).filter(isUserVisibleModel);
 }
 
 export async function ensureModel(db: D1DatabaseLike, input: EnsureModelInput): Promise<ModelRef> {
@@ -946,6 +946,10 @@ async function replaceRunnerModels(db: D1DatabaseLike, input: RunnerRegistration
     .run();
 
   for (const model of input.models ?? []) {
+    if (!isUserVisibleModel(model)) {
+      continue;
+    }
+
     await db
       .prepare(
         `INSERT INTO models (
@@ -984,6 +988,11 @@ async function replaceRunnerModels(db: D1DatabaseLike, input: RunnerRegistration
       )
       .run();
   }
+}
+
+function isUserVisibleModel(model: Pick<ModelRef, "model" | "source">) {
+  if (model.model === "default") return true;
+  return model.source !== "custom" && model.source !== "suggested" && model.source !== "fallback";
 }
 
 function mapFusionRun(row: FusionRunRow): FusionRunSummary {

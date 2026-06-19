@@ -1,4 +1,4 @@
-import { buildFinalSynthesisPrompt, buildJudgePrompt, buildPanelPrompt, createEmptyJudgeResult, parseJudgeResult } from "@fusion-harness/core";
+import { buildJudgeSynthesisPrompt, buildPanelPrompt } from "@fusion-harness/core";
 import {
   createArtifact,
   createAuditEvent,
@@ -70,7 +70,7 @@ export async function createRunFromRequest(env: Env, principal: AccessIdentity, 
     providerPolicy: payload.providerPolicy,
     maxPanelModels: payload.mode === "direct" ? 1 : 6,
   });
-  const plannedPanel = payload.mode === "direct" ? [selection.final ?? selection.panel[0]].filter(Boolean) : selection.panel;
+  const plannedPanel = payload.mode === "direct" ? [selection.panel[0] ?? selection.judge].filter(Boolean) : selection.panel;
   const plannedPanelSteps = plannedPanel.map((model, index) =>
     buildExecutableStep({
       runId,
@@ -91,7 +91,7 @@ export async function createRunFromRequest(env: Env, principal: AccessIdentity, 
     mode: payload.mode,
     steps: [
       ...plannedPanelSteps,
-      ...buildDeferredSteps(runId, payload, selection.judge, selection.final, plannedPanelSteps, runners),
+      ...buildDeferredSteps(runId, payload, selection.judge, plannedPanelSteps, runners),
     ],
     createdAt: now,
   };
@@ -229,7 +229,7 @@ export async function advanceFusionRunAfterJob(env: Env, orgId: string, complete
   const run = await getFusionRun(env.DB, orgId, completedJob.runId);
   if (!run?.executionPlan) return;
 
-  if (completedJob.kind === "direct" || completedJob.kind === "final") {
+  if (completedJob.kind === "direct" || completedJob.kind === "judge") {
     const status = completedJob.status === "completed" ? "completed" : "failed";
     await updateFusionRunStatus(env.DB, orgId, completedJob.runId, status, now, completedJob.error);
     await appendRunEvent(env, orgId, {
@@ -258,7 +258,7 @@ export async function advanceFusionRunAfterJob(env: Env, orgId: string, complete
   }
 
   const dispatchableQueuedStep = run.executionPlan.steps.find((step) => {
-    if (step.kind !== "judge" && step.kind !== "final") return false;
+    if (step.kind !== "judge") return false;
     const job = jobsById.get(step.jobId);
     if (job?.status !== "queued") return false;
     return (step.dependsOn ?? []).every((jobId) => isTerminal(jobsById.get(jobId)?.status));
@@ -269,7 +269,7 @@ export async function advanceFusionRunAfterJob(env: Env, orgId: string, complete
   }
 
   const nextStep = run.executionPlan.steps.find((step) => {
-    if (step.kind !== "judge" && step.kind !== "final") return false;
+    if (step.kind !== "judge") return false;
     if (jobsById.has(step.jobId)) return false;
     return (step.dependsOn ?? []).every((jobId) => isTerminal(jobsById.get(jobId)?.status));
   });
@@ -307,7 +307,7 @@ async function dispatchDeferredStep(
   const prompt = await promptForDeferredStep(env, orgId, completedJob.runId, runnableStep, userPrompt, panelOutputs, jobs);
 
   await enqueueRunnerJob(env, orgId, runnableRequest, userPrompt, run.promptObjectKey ?? "", runnableStep, now, prompt);
-  const startedType = runnableStep.kind === "judge" ? "judge.started" : "final.started";
+  const startedType = "judge.started";
   const events = await listRunEvents(env.DB, orgId, completedJob.runId, { limit: 1000 });
   if (!events.some((event) => event.jobId === runnableStep.jobId && event.type === startedType)) {
     await appendRunEvent(env, orgId, {
@@ -468,7 +468,6 @@ function buildDeferredSteps(
   runId: string,
   request: FusionRunRequest,
   judge: ModelRef | undefined,
-  final: ModelRef | undefined,
   panelSteps: FusionExecutionStep[],
   runners: RunnerRef[],
 ): FusionExecutionStep[] {
@@ -478,30 +477,16 @@ function buildDeferredSteps(
 
   const steps: FusionExecutionStep[] = [];
   const panelJobIds = panelSteps.map((step) => step.jobId);
-  let judgeStep: FusionExecutionStep | undefined;
   if (judge) {
-    judgeStep = {
+    steps.push({
       ...buildExecutableStep({
         runId,
         kind: "judge",
         model: judge,
         runners,
-        role: "judge",
+        role: "judge_synthesis",
       }),
       dependsOn: panelJobIds,
-    };
-    steps.push(judgeStep);
-  }
-  if (final) {
-    steps.push({
-      ...buildExecutableStep({
-        runId,
-        kind: "final",
-        model: final,
-        runners,
-        role: "final",
-      }),
-      dependsOn: judgeStep ? [judgeStep.jobId] : panelJobIds,
     });
   }
   return steps;
@@ -516,22 +501,11 @@ async function promptForDeferredStep(
   panelOutputs: Array<{ model: string; output: string }>,
   jobs: RunnerJob[],
 ) {
-  if (step.kind === "judge") {
-    return buildJudgePrompt(userPrompt, panelOutputs);
-  }
-
-  const judgeJob = jobs.find((job) => job.kind === "judge");
-  const judgeOutput = judgeJob ? await outputForJob(env, orgId, runId, judgeJob) : "";
-  const judge =
-    judgeJob?.status === "completed" && judgeOutput.trim()
-      ? parseJudgeResult(judgeOutput)
-      : createEmptyJudgeResult("Judge analysis was unavailable or failed.");
-
-  return buildFinalSynthesisPrompt({
-    userPrompt,
-    judge,
-    panelOutputs,
-  });
+  void env;
+  void orgId;
+  void runId;
+  void jobs;
+  return buildJudgeSynthesisPrompt(userPrompt, panelOutputs);
 }
 
 async function hydrateStepRouting(env: Env, orgId: string, step: FusionExecutionStep): Promise<FusionExecutionStep | undefined> {

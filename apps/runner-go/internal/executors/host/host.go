@@ -53,7 +53,7 @@ func Run(ctx context.Context, spec CommandSpec) (Result, error) {
 
 	cmd := exec.CommandContext(ctx, path, spec.Args...)
 	cmd.Dir = spec.WorkingDir
-	cmd.Env = sanitizedEnv(spec.Env)
+	cmd.Env = processEnv(spec.Env)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -93,34 +93,16 @@ func validateWorkingDir(workingDir string, allowedRoots []string) error {
 	return errors.New("working directory is outside the configured workspace roots")
 }
 
-func sanitizedEnv(extra map[string]string) []string {
-	deny := []string{"TOKEN", "SECRET", "PASSWORD", "COOKIE", "KEY", "CREDENTIAL"}
+func processEnv(extra map[string]string) []string {
 	env := make([]string, 0, len(os.Environ())+len(extra))
 
 	for _, item := range os.Environ() {
-		name := strings.SplitN(item, "=", 2)[0]
-		if containsSensitiveMarker(name, deny) {
-			continue
-		}
 		env = append(env, item)
 	}
 
 	for key, value := range extra {
-		if containsSensitiveMarker(key, deny) {
-			continue
-		}
 		env = append(env, key+"="+value)
 	}
 
 	return env
-}
-
-func containsSensitiveMarker(name string, deny []string) bool {
-	upper := strings.ToUpper(name)
-	for _, marker := range deny {
-		if strings.Contains(upper, marker) {
-			return true
-		}
-	}
-	return false
 }

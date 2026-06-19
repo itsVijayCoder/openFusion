@@ -71,6 +71,40 @@ func TestListModelsUsesLiveModelListing(t *testing.T) {
 	}
 }
 
+func TestListModelsFallsBackToOnlyDefaultConfig(t *testing.T) {
+	dir := t.TempDir()
+	workspace := t.TempDir()
+	writeExecutable(
+		t,
+		dir,
+		"cursor-agent",
+		"#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'cursor 1.0.0\\n'; exit 0; fi\nprintf 'No models\\n'\n",
+	)
+	t.Setenv("PATH", "")
+
+	models := listModels(
+		context.Background(),
+		[]AgentDef{
+			{
+				ID:             "cursor-agent",
+				Name:           "Cursor Agent",
+				Binary:         "cursor-agent",
+				VersionArgs:    []string{"--version"},
+				ListModelsArgs: []string{"models"},
+				FallbackModels: models("auto", "gpt-5"),
+			},
+		},
+		[]string{workspace},
+		[]string{dir},
+	)
+	if len(models) != 1 {
+		t.Fatalf("expected only default model fallback, got %#v", models)
+	}
+	if models[0].ID != "cursor-agent/default" || models[0].Availability != "detected" {
+		t.Fatalf("expected detected default model, got %#v", models[0])
+	}
+}
+
 func TestParseCodexDebugModels(t *testing.T) {
 	models := ParseCodexDebugModels(`{"models":[{"slug":"gpt-5-live","display_name":"GPT 5 Live"},{"id":"o4-mini"},{"slug":"hidden","visibility":"hidden"}]}`)
 
