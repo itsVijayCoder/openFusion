@@ -1,10 +1,16 @@
-PRAGMA foreign_keys = OFF;
+PRAGMA defer_foreign_keys = true;
 
 DROP INDEX IF EXISTS idx_fusion_runs_org_created;
 DROP INDEX IF EXISTS idx_fusion_runs_conversation;
+DROP INDEX IF EXISTS idx_panel_outputs_run;
 DROP INDEX IF EXISTS idx_runner_jobs_runner_status;
 DROP INDEX IF EXISTS idx_runner_jobs_run;
+DROP INDEX IF EXISTS idx_run_events_run_seq;
 
+ALTER TABLE panel_outputs RENAME TO panel_outputs_old;
+ALTER TABLE runner_jobs RENAME TO runner_jobs_old;
+ALTER TABLE run_events RENAME TO run_events_old;
+ALTER TABLE artifacts RENAME TO artifacts_old;
 ALTER TABLE fusion_runs RENAME TO fusion_runs_old;
 
 CREATE TABLE fusion_runs (
@@ -47,12 +53,30 @@ SELECT
   created_at, started_at, completed_at
 FROM fusion_runs_old;
 
-DROP TABLE fusion_runs_old;
+CREATE TABLE panel_outputs (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  adapter TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'timeout', 'cancelled')),
+  output_object_key TEXT,
+  error TEXT,
+  latency_ms INTEGER,
+  usage_json TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  FOREIGN KEY (run_id) REFERENCES fusion_runs(id),
+  FOREIGN KEY (model_id) REFERENCES models(id)
+);
 
-CREATE INDEX idx_fusion_runs_org_created ON fusion_runs(org_id, created_at DESC);
-CREATE INDEX idx_fusion_runs_conversation ON fusion_runs(conversation_id, created_at);
-
-ALTER TABLE runner_jobs RENAME TO runner_jobs_old;
+INSERT INTO panel_outputs (
+  id, run_id, model_id, adapter, status, output_object_key, error,
+  latency_ms, usage_json, created_at, completed_at
+)
+SELECT
+  id, run_id, model_id, adapter, status, output_object_key, error,
+  latency_ms, usage_json, created_at, completed_at
+FROM panel_outputs_old;
 
 CREATE TABLE runner_jobs (
   id TEXT PRIMARY KEY,
@@ -86,9 +110,58 @@ SELECT
   created_at, started_at, completed_at
 FROM runner_jobs_old;
 
-DROP TABLE runner_jobs_old;
+CREATE TABLE run_events (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  job_id TEXT,
+  runner_id TEXT,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (org_id) REFERENCES orgs(id),
+  FOREIGN KEY (run_id) REFERENCES fusion_runs(id),
+  UNIQUE (run_id, seq)
+);
 
+INSERT INTO run_events (
+  id, org_id, run_id, seq, type, job_id, runner_id, payload_json, created_at
+)
+SELECT
+  id, org_id, run_id, seq, type, job_id, runner_id, payload_json, created_at
+FROM run_events_old;
+
+CREATE TABLE artifacts (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  object_key TEXT NOT NULL,
+  content_type TEXT,
+  size_bytes INTEGER,
+  sha256 TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (org_id) REFERENCES orgs(id),
+  FOREIGN KEY (run_id) REFERENCES fusion_runs(id)
+);
+
+INSERT INTO artifacts (
+  id, org_id, run_id, kind, object_key, content_type, size_bytes, sha256, created_at
+)
+SELECT
+  id, org_id, run_id, kind, object_key, content_type, size_bytes, sha256, created_at
+FROM artifacts_old;
+
+DROP TABLE panel_outputs_old;
+DROP TABLE runner_jobs_old;
+DROP TABLE run_events_old;
+DROP TABLE artifacts_old;
+DROP TABLE fusion_runs_old;
+
+CREATE INDEX idx_fusion_runs_org_created ON fusion_runs(org_id, created_at DESC);
+CREATE INDEX idx_fusion_runs_conversation ON fusion_runs(conversation_id, created_at);
+CREATE INDEX idx_panel_outputs_run ON panel_outputs(run_id);
 CREATE INDEX idx_runner_jobs_runner_status ON runner_jobs(runner_id, status, created_at);
 CREATE INDEX idx_runner_jobs_run ON runner_jobs(run_id, created_at);
-
-PRAGMA foreign_keys = ON;
+CREATE INDEX idx_run_events_run_seq ON run_events(run_id, seq);
