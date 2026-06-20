@@ -31,6 +31,9 @@
       "bucket_name": "fusion-harness-artifacts"
     }
   ],
+  "ai": {
+    "binding": "AI"
+  },
   "durable_objects": {
     "bindings": [
       {

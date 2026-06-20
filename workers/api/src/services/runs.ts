@@ -72,7 +72,7 @@ export async function createRunFromRequest(
   const availableModels = await listModels(env.DB, principal.orgId);
   const runners = await listRunners(env.DB, principal.orgId);
   const userPrompt = renderMessages(payload.messages);
-  const title = deriveTitle(payload.messages);
+  const title = await deriveTitle(env, payload.messages);
   const selection = selectFusionModels({
     availableModels,
     preset: payload.preset ?? "mixed-coding",
@@ -715,9 +715,34 @@ function renderMessages(messages: FusionRunRequest["messages"]) {
   return messages.map((message) => `${message.role.toUpperCase()}:\n${message.content}`).join("\n\n");
 }
 
-function deriveTitle(messages: FusionRunRequest["messages"]): string {
+async function deriveTitle(env: Env, messages: FusionRunRequest["messages"]): Promise<string> {
   const userMessage = messages.find((message) => message.role === "user");
   const text = userMessage?.content ?? messages[0]?.content ?? "Untitled run";
+  const fallback = fallbackTitle(text);
+
+  try {
+    const response = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      messages: [
+        {
+          role: "system",
+          content:
+            "You generate a short, descriptive title (max 6 words) for a user's prompt. " +
+            "Reply with ONLY the title, no quotes, no punctuation at the end, no explanation.",
+        },
+        { role: "user", content: text.slice(0, 2000) },
+      ],
+      max_tokens: 30,
+    });
+    const title = typeof response === "string" ? response : String((response as { response?: string }).response ?? "");
+    const cleaned = title.trim().replace(/^["']|["']$/g, "").replace(/\.$/, "");
+    if (cleaned && cleaned.length <= 80) return cleaned;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function fallbackTitle(text: string): string {
   const firstLine = text.split(/\r?\n/)[0]?.trim() ?? text;
   if (firstLine.length <= 60) return firstLine;
   return `${firstLine.slice(0, 57).trim()}...`;
