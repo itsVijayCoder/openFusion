@@ -1,4 +1,7 @@
-import { MessageSquarePlus, Plus, Trash2 } from "lucide-react";
+"use client";
+
+import { Check, MessageSquarePlus, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useState } from "react";
 import type { FusionChat } from "./types";
 import { cn } from "@/lib/utils";
 
@@ -9,9 +12,41 @@ type SidebarProps = {
   onNewFusion: () => void;
   onSelectChat: (chatId: string) => void;
   onDeleteChat: (chatId: string) => void;
+  onRenameChat: (chatId: string, title: string) => Promise<void> | void;
 };
 
-export function Sidebar({ chats, activeChatId, loading, onNewFusion, onSelectChat, onDeleteChat }: SidebarProps) {
+export function Sidebar({ chats, activeChatId, loading, onNewFusion, onSelectChat, onDeleteChat, onRenameChat }: SidebarProps) {
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [savingChatId, setSavingChatId] = useState<string | null>(null);
+
+  function startRename(chat: FusionChat) {
+    setEditingChatId(chat.id);
+    setDraftTitle(chat.title);
+  }
+
+  function cancelRename() {
+    setEditingChatId(null);
+    setDraftTitle("");
+  }
+
+  async function submitRename(chat: FusionChat) {
+    const title = draftTitle.trim();
+    if (!title || savingChatId) return;
+    if (title === chat.title) {
+      cancelRename();
+      return;
+    }
+
+    setSavingChatId(chat.id);
+    try {
+      await onRenameChat(chat.id, title);
+      cancelRename();
+    } finally {
+      setSavingChatId(null);
+    }
+  }
+
   return (
     <aside className="flex w-[250px] shrink-0 flex-col border-r border-border bg-sidebar">
       <div className="p-3">
@@ -47,23 +82,80 @@ export function Sidebar({ chats, activeChatId, loading, onNewFusion, onSelectCha
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                 )}
               >
-                <button
-                  type="button"
-                  onClick={() => onSelectChat(chat.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left"
-                >
-                  <MessageSquarePlus aria-hidden className="size-3.5 shrink-0 opacity-60" />
-                  <span className="flex-1 truncate text-[13px]">{chat.title}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete ${chat.title}`}
-                  title="Delete"
-                  onClick={() => onDeleteChat(chat.id)}
-                  className="mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
-                >
-                  <Trash2 aria-hidden className="size-3.5" />
-                </button>
+                {editingChatId === chat.id ? (
+                  <form
+                    className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1.5"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void submitRename(chat);
+                    }}
+                  >
+                    <input
+                      value={draftTitle}
+                      onChange={(event) => setDraftTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") cancelRename();
+                      }}
+                      disabled={savingChatId === chat.id}
+                      autoFocus
+                      maxLength={120}
+                      className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[13px] text-foreground outline-none focus:border-primary"
+                    />
+                    <button
+                      type="submit"
+                      aria-label="Save title"
+                      title="Save"
+                      disabled={!draftTitle.trim() || savingChatId === chat.id}
+                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Check aria-hidden className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Cancel rename"
+                      title="Cancel"
+                      onClick={cancelRename}
+                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <X aria-hidden className="size-3.5" />
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onSelectChat(chat.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left"
+                    >
+                      <MessageSquarePlus aria-hidden className="size-3.5 shrink-0 opacity-60" />
+                      <span className="flex-1 truncate text-[13px]">{chat.title}</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Rename ${chat.title}`}
+                      title="Rename"
+                      onClick={() => startRename(chat)}
+                      className={cn(
+                        "flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100",
+                        activeChatId === chat.id ? "opacity-100" : "opacity-0",
+                      )}
+                    >
+                      <Pencil aria-hidden className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${chat.title}`}
+                      title="Delete"
+                      onClick={() => onDeleteChat(chat.id)}
+                      className={cn(
+                        "mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100",
+                        activeChatId === chat.id ? "opacity-100" : "opacity-0",
+                      )}
+                    >
+                      <Trash2 aria-hidden className="size-3.5" />
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </div>

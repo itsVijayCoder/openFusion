@@ -1,5 +1,5 @@
-import { getFusionRunDetail, listFusionRuns, listRunEvents } from "@fusion-harness/db";
-import { approvalRequestSchema, fusionContinueRequestSchema, fusionRunRequestSchema } from "@fusion-harness/shared";
+import { createAuditEvent, getFusionRunDetail, listFusionRuns, listRunEvents, updateFusionRunTitle } from "@fusion-harness/db";
+import { approvalRequestSchema, formatEntityId, fusionContinueRequestSchema, fusionRunRequestSchema, fusionRunTitleUpdateRequestSchema } from "@fusion-harness/shared";
 import { Hono } from "hono";
 import type { AppBindings } from "../env";
 import { recordApproval } from "../services/approvals";
@@ -67,6 +67,28 @@ export const fusionRunRoutes = new Hono<AppBindings>()
     const { run, promptObjectKey } = await continueRun(c.env, principal, runId, body.message);
 
     return c.json({ ...run, promptObjectKey }, 202);
+  })
+  .post("/:id/rename", async (c) => {
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const runId = c.req.param("id");
+    const body = fusionRunTitleUpdateRequestSchema.parse(await c.req.json());
+    const run = await updateFusionRunTitle(c.env.DB, principal.orgId, runId, body.title);
+
+    if (!run) {
+      return c.json({ error: "Run not found" }, 404);
+    }
+
+    await createAuditEvent(c.env.DB, {
+      id: formatEntityId("audit", crypto.randomUUID()),
+      orgId: principal.orgId,
+      userId: principal.userId,
+      runId,
+      eventType: "run.renamed",
+      metadata: { title: body.title },
+      createdAt: new Date().toISOString(),
+    });
+
+    return c.json(run);
   })
   .post("/:id/approve", async (c) => {
     const principal = requireAccessIdentity(c.req.raw.headers);

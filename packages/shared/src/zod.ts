@@ -180,6 +180,10 @@ export const fusionContinueRequestSchema = z.object({
   message: z.string().min(1),
 });
 
+export const fusionRunTitleUpdateRequestSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+});
+
 export const fusionExecutionStepSchema = z.object({
   id: z.string().min(1),
   kind: runnerJobKindSchema,

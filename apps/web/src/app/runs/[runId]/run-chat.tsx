@@ -7,12 +7,15 @@ import {
   RiArrowDownSLine,
   RiArrowRightLine,
   RiArrowUpLine,
+  RiCheckLine,
+  RiCloseLine,
   RiErrorWarningLine,
   RiFileList3Line,
   RiHistoryLine,
   RiLayoutGridLine,
   RiDeleteBinLine,
   RiPauseLine,
+  RiPencilLine,
   RiPlayLine,
   RiRobot2Line,
   RiStopLine,
@@ -23,7 +26,9 @@ import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { ModelBadge } from "@/components/model-badge";
 import { OutputDrawer } from "@/components/output-drawer";
 import { StatusPill } from "@/components/product-ui";
+import { Sidebar } from "@/features/fusion/sidebar";
 import { TopNav } from "@/features/fusion/top-nav";
+import type { FusionChat } from "@/features/fusion/types";
 import { apiDelete, apiPost, apiUrl } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -78,10 +83,17 @@ export function RunChat({ run }: RunChatProps) {
   const [showFinalModal, setShowFinalModal] = useState(false);
   const [judgeExpanded, setJudgeExpanded] = useState(false);
   const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction | null>(null);
+  const [chats, setChats] = useState<FusionChat[]>([]);
+  const [chatsLoading, setChatsLoading] = useState(true);
+  const [renamedTitle, setRenamedTitle] = useState<{ runId: string; title: string } | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleSaving, setTitleSaving] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const initialStatus = run.status;
   const messages = useMemo(() => run.messages ?? [], [run.messages]);
+  const title = renamedTitle?.runId === run.id ? renamedTitle.title : (run.title ?? run.id);
 
   useEffect(() => {
     let socket: WebSocket | undefined;
@@ -127,6 +139,40 @@ export function RunChat({ run }: RunChatProps) {
       socket?.close();
     };
   }, [run.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadChats() {
+      try {
+        const response = await fetch(apiUrl("/api/fusion/runs?limit=30"), {
+          cache: "no-store",
+          headers: {
+            "x-fusion-dev-email": "developer@fusion.local",
+            "x-fusion-dev-name": "Fusion Developer",
+          },
+        });
+        if (!response.ok || cancelled) return;
+        const body = (await response.json().catch(() => ({}))) as { data?: Array<{ id: string; title?: string; status: string; createdAt: string }> };
+        if (cancelled || !Array.isArray(body.data)) return;
+        setChats(
+          body.data.map((item) => ({
+            id: item.id,
+            title: item.title ?? item.id,
+            status: item.status,
+            createdAt: item.createdAt,
+          })),
+        );
+      } catch {
+        // Keep the run detail usable even if the history request fails.
+      } finally {
+        if (!cancelled) setChatsLoading(false);
+      }
+    }
+    void loadChats();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const trace = useMemo(() => buildTrace(events, initialStatus), [events, initialStatus]);
   const finalText = trace.final.text || extractFinalOutput(trace.synthesis.text);
@@ -183,6 +229,63 @@ export function RunChat({ run }: RunChatProps) {
     }
   }
 
+  function handleNewFusion() {
+    router.push("/chat");
+  }
+
+  function handleSelectChat(chatId: string) {
+    setTitleEditing(false);
+    setTitleDraft("");
+    router.push(`/runs/${chatId}`);
+  }
+
+  async function handleDeleteChat(chatId: string) {
+    if (!window.confirm("Delete this run history and artifacts? Running work will be stopped first.")) return;
+    try {
+      await apiDelete<{ status: string }>(`/api/fusion/runs/${chatId}`);
+      setChats((current) => current.filter((chat) => chat.id !== chatId));
+      if (chatId === run.id) {
+        router.push("/chat");
+      }
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Failed to delete run");
+    }
+  }
+
+  async function renameChat(chatId: string, nextTitle: string) {
+    const renamed = await apiPost<{ id: string; title?: string }>(`/api/fusion/runs/${chatId}/rename`, {
+      title: nextTitle,
+    });
+    const resolvedTitle = renamed.title ?? nextTitle;
+    setChats((current) =>
+      current.map((chat) => (chat.id === chatId ? { ...chat, title: resolvedTitle } : chat)),
+    );
+    if (chatId === run.id) {
+      setRenamedTitle({ runId: chatId, title: resolvedTitle });
+      setTitleDraft(resolvedTitle);
+    }
+  }
+
+  async function submitTitleRename() {
+    const nextTitle = titleDraft.trim();
+    if (!nextTitle || titleSaving) return;
+    if (nextTitle === title) {
+      setTitleEditing(false);
+      return;
+    }
+
+    setTitleSaving(true);
+    setSendError(undefined);
+    try {
+      await renameChat(run.id, nextTitle);
+      setTitleEditing(false);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Failed to rename run");
+    } finally {
+      setTitleSaving(false);
+    }
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -203,105 +306,178 @@ export function RunChat({ run }: RunChatProps) {
   return (
     <div className="flex h-[100dvh] flex-col bg-background text-foreground">
       <TopNav />
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="truncate text-sm font-medium text-foreground">{run.title ?? run.id}</span>
-          <StatusPill value={currentStatus} />
-          <span className="hidden text-xs text-muted-foreground sm:inline">
-            {run.mode} · {formatDateTime(run.createdAt)}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "hidden h-6 items-center rounded-md border px-2 text-xs font-medium sm:inline-flex",
-              connection === "live"
-                ? "border-primary/20 bg-primary/10 text-primary"
-                : "border-border bg-muted text-muted-foreground",
-            )}
-          >
-            {connection}
-          </span>
-          <RunLifecycleControls
-            status={currentStatus}
-            pendingAction={lifecycleAction}
-            onAction={(action) => void handleLifecycleAction(action)}
-          />
-          <button
-            type="button"
-            onClick={() => setShowDetails(true)}
-            className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <RiLayoutGridLine aria-hidden className="size-4" />
-            <span className="hidden sm:inline">Details</span>
-          </button>
-        </div>
-      </header>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
-          {messages.length > 0 ? (
-            messages.map((message, index) => (
-              <MessageBubble key={index} role={message.role} content={message.content} />
-            ))
-          ) : (
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center">
-              <p className="text-sm text-muted-foreground">Initial prompt not available for this run.</p>
+      <div className="flex min-h-0 flex-1">
+        <Sidebar
+          chats={chats}
+          activeChatId={run.id}
+          loading={chatsLoading}
+          onNewFusion={handleNewFusion}
+          onSelectChat={handleSelectChat}
+          onDeleteChat={(chatId) => void handleDeleteChat(chatId)}
+          onRenameChat={renameChat}
+        />
+        <main className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              {titleEditing ? (
+                <form
+                  className="flex min-w-0 flex-1 items-center gap-1.5"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submitTitleRename();
+                  }}
+                >
+                  <input
+                    value={titleDraft}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setTitleDraft(title);
+                        setTitleEditing(false);
+                      }
+                    }}
+                    disabled={titleSaving}
+                    autoFocus
+                    maxLength={120}
+                    className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm font-medium text-foreground outline-none focus:border-primary"
+                  />
+                  <button
+                    type="submit"
+                    aria-label="Save title"
+                    title="Save title"
+                    disabled={!titleDraft.trim() || titleSaving}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <RiCheckLine aria-hidden className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Cancel rename"
+                    title="Cancel rename"
+                    onClick={() => {
+                      setTitleDraft(title);
+                      setTitleEditing(false);
+                    }}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <RiCloseLine aria-hidden className="size-4" />
+                  </button>
+                </form>
+              ) : (
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-sm font-medium text-foreground">{title}</span>
+                  <button
+                    type="button"
+                    aria-label="Rename chat"
+                    title="Rename chat"
+                    onClick={() => {
+                      setTitleDraft(title);
+                      setTitleEditing(true);
+                    }}
+                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <RiPencilLine aria-hidden className="size-3.5" />
+                  </button>
+                </div>
+              )}
+              <StatusPill value={currentStatus} />
+              <span className="hidden text-xs text-muted-foreground sm:inline">
+                {run.mode} · {formatDateTime(run.createdAt)}
+              </span>
             </div>
-          )}
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "hidden h-6 items-center rounded-md border px-2 text-xs font-medium sm:inline-flex",
+                  connection === "live"
+                    ? "border-primary/20 bg-primary/10 text-primary"
+                    : "border-border bg-muted text-muted-foreground",
+                )}
+              >
+                {connection}
+              </span>
+              <RunLifecycleControls
+                status={currentStatus}
+                pendingAction={lifecycleAction}
+                onAction={(action) => void handleLifecycleAction(action)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowDetails(true)}
+                className="flex h-8 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <RiLayoutGridLine aria-hidden className="size-4" />
+                <span className="hidden sm:inline">Details</span>
+              </button>
+            </div>
+          </header>
 
-          {showThinking ? <ThinkingIndicator trace={trace} /> : null}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto">
+            <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
+              {messages.length > 0 ? (
+                messages.map((message, index) => (
+                  <MessageBubble key={index} role={message.role} content={message.content} />
+                ))
+              ) : (
+                <div className="rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center">
+                  <p className="text-sm text-muted-foreground">Initial prompt not available for this run.</p>
+                </div>
+              )}
 
-          {(hasPanelOutputs || hasJudgeOutput || hasFinalOutput || !isRunActive) && !showThinking ? (
-            <SourcesSection
-              trace={trace}
-              finalText={finalText}
-              judgeText={judgeText}
-              judgeExpanded={judgeExpanded}
-              onToggleJudge={() => setJudgeExpanded((v) => !v)}
-              onOpenPanel={openPanelDrawer}
-              onOpenFinal={() => setShowFinalModal(true)}
-            />
-          ) : null}
+              {showThinking ? <ThinkingIndicator trace={trace} /> : null}
 
-          {!isRunActive && !showLiveOutput && currentStatus === "failed" ? (
-            <MessageBubble
-              role="assistant"
-              content=""
-              error={run.error || "Run failed without producing output."}
-            />
-          ) : null}
-        </div>
-      </div>
+              {(hasPanelOutputs || hasJudgeOutput || hasFinalOutput || !isRunActive) && !showThinking ? (
+                <SourcesSection
+                  trace={trace}
+                  finalText={finalText}
+                  judgeText={judgeText}
+                  judgeExpanded={judgeExpanded}
+                  onToggleJudge={() => setJudgeExpanded((v) => !v)}
+                  onOpenPanel={openPanelDrawer}
+                  onOpenFinal={() => setShowFinalModal(true)}
+                />
+              ) : null}
 
-      <div className="shrink-0 border-t border-border bg-background">
-        <div className="mx-auto max-w-3xl px-4 py-3">
-          {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
-          <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2">
-            <textarea
-              value={continueMessage}
-              onChange={(event) => setContinueMessage(event.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isRunInProgress || isSending}
-              placeholder={isRunInProgress ? (currentStatus === "paused" ? "Run is paused..." : "Waiting for run to complete...") : "Continue the conversation..."}
-              rows={1}
-              className="max-h-32 min-h-[2.5rem] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
-            />
-            <button
-              type="button"
-              onClick={() => void handleContinue()}
-              disabled={isRunInProgress || isSending || !continueMessage.trim()}
-              className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <RiArrowUpLine aria-hidden className="size-4" />
-            </button>
+              {!isRunActive && !showLiveOutput && currentStatus === "failed" ? (
+                <MessageBubble
+                  role="assistant"
+                  content=""
+                  error={run.error || "Run failed without producing output."}
+                />
+              ) : null}
+            </div>
           </div>
-          <p className="mt-1.5 px-2 text-xs text-muted-foreground">
-            {isRunInProgress
-              ? "Continue will be available once the run completes."
-              : "Press Enter to send, Shift+Enter for new line."}
-          </p>
-        </div>
+
+          <div className="shrink-0 border-t border-border bg-background">
+            <div className="mx-auto max-w-3xl px-4 py-3">
+              {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
+              <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2">
+                <textarea
+                  value={continueMessage}
+                  onChange={(event) => setContinueMessage(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={isRunInProgress || isSending}
+                  placeholder={isRunInProgress ? (currentStatus === "paused" ? "Run is paused..." : "Waiting for run to complete...") : "Continue the conversation..."}
+                  rows={1}
+                  className="max-h-32 min-h-[2.5rem] flex-1 resize-none bg-transparent px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleContinue()}
+                  disabled={isRunInProgress || isSending || !continueMessage.trim()}
+                  className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <RiArrowUpLine aria-hidden className="size-4" />
+                </button>
+              </div>
+              <p className="mt-1.5 px-2 text-xs text-muted-foreground">
+                {isRunInProgress
+                  ? "Continue will be available once the run completes."
+                  : "Press Enter to send, Shift+Enter for new line."}
+              </p>
+            </div>
+          </div>
+        </main>
       </div>
 
       {showFinalModal ? (

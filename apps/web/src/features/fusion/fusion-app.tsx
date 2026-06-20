@@ -135,6 +135,19 @@ export function FusionApp({ models }: FusionAppProps) {
     [activeChatId, router],
   );
 
+  const handleRenameChat = useCallback(async (chatId: string, title: string) => {
+    try {
+      const run = await apiPost<{ id: string; title?: string }>(`/api/fusion/runs/${chatId}/rename`, { title });
+      const nextTitle = run.title ?? title;
+      setChats((current) =>
+        current.map((chat) => (chat.id === chatId ? { ...chat, title: nextTitle } : chat)),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to rename run");
+      throw err;
+    }
+  }, []);
+
   return (
     <div className="flex h-[100dvh] flex-col bg-background text-foreground">
       <TopNav />
@@ -146,6 +159,7 @@ export function FusionApp({ models }: FusionAppProps) {
           onNewFusion={handleNewFusion}
           onSelectChat={handleSelectChat}
           onDeleteChat={handleDeleteChat}
+          onRenameChat={handleRenameChat}
         />
         <main className="min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[680px] px-6 pb-12">

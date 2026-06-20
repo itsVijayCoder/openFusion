@@ -49,7 +49,7 @@ const navGroups = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
-  if (pathname === "/chat") {
+  if (pathname === "/chat" || pathname.startsWith("/runs/")) {
     return <main className="min-h-screen">{children}</main>;
   }
 

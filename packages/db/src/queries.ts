@@ -460,6 +460,15 @@ export async function updateFusionRunStatus(
     .run();
 }
 
+export async function updateFusionRunTitle(db: D1DatabaseLike, orgId: string, runId: string, title: string): Promise<FusionRunSummary | null> {
+  await db
+    .prepare("UPDATE fusion_runs SET title = ? WHERE org_id = ? AND id = ?")
+    .bind(title, orgId, runId)
+    .run();
+
+  return getFusionRun(db, orgId, runId);
+}
+
 export async function registerRunner(db: D1DatabaseLike, input: RunnerRegistrationInput): Promise<RunnerRef> {
   await db
     .prepare(
