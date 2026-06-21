@@ -227,7 +227,7 @@ export function parseRsaPrivateKeyDer(der: Uint8Array): RsaPrivateKeyComponents 
   if (firstElement.tag === 0x02) {
     const version = firstElement.content;
     if (version.length === 1 && (version[0] === 0 || version[0] === 1)) {
-      return parsePkcs1RsaPrivateKey(outer.content, firstElement.totalLength);
+      return parsePkcs1RsaPrivateKey(outer.content, 0);
     }
   }
 
