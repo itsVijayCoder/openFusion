@@ -14,6 +14,7 @@ import {
   formatEntityId,
   gitHubPrStatusSchema,
   prReviewCommentUpdateSchema,
+  prReviewPublishSchema,
   prReviewQueueQuerySchema,
   prReviewStartSchema,
   type PrReviewSide,
@@ -23,6 +24,7 @@ import type { AppBindings } from "../env";
 import { requireAccessIdentity } from "../services/auth";
 import { fetchAndStorePrDiff, fetchFileContent, getStoredPrDiff } from "../services/github-diff";
 import { PrReviewError, startPrReview } from "../services/pr-review-execution";
+import { PublishError, publishPrReview } from "../services/pr-review-publish";
 import { syncPullRequestsForRepository } from "../services/github-sync";
 
 export const prReviewRoutes = new Hono<AppBindings>()
@@ -227,7 +229,16 @@ export const prReviewRoutes = new Hono<AppBindings>()
     });
   })
   .post("/:prId/publish", async (c) => {
-    return c.json({ error: "Publishing is not available in this phase" }, 501);
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const body = prReviewPublishSchema.parse(await c.req.json().catch(() => ({})));
+    const result = await publishPrReview(c.env, principal, {
+      prId: c.req.param("prId"),
+      commentIds: body.commentIds,
+      decision: body.decision,
+      event: body.event,
+      body: body.body,
+    });
+    return c.json(result, 200);
   })
   .get("/statuses/values", async (c) => {
     return c.json({
@@ -237,6 +248,9 @@ export const prReviewRoutes = new Hono<AppBindings>()
 
 prReviewRoutes.onError((error, c) => {
   if (error instanceof PrReviewError) {
+    return c.json({ error: error.message }, error.statusCode);
+  }
+  if (error instanceof PublishError) {
     return c.json({ error: error.message }, error.statusCode);
   }
   throw error;
