@@ -1,13 +1,15 @@
-import type { GitHubPrReviewDetail } from "@fusion-harness/shared";
+import type { GitHubPrReviewDetail, PrDiffSnapshot } from "@fusion-harness/shared";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DataNotice, EmptyState, PageHeader, Section, StatusPill } from "@/components/product-ui";
 import { apiGet } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { PrDiffViewer } from "@/features/pr-reviews/pr-diff-viewer";
 
 export const dynamic = "force-dynamic";
 
 type DetailResponse = GitHubPrReviewDetail;
+type DiffResponse = PrDiffSnapshot;
 
 export default async function PrReviewDetailPage({
   params,
@@ -15,7 +17,10 @@ export default async function PrReviewDetailPage({
   params: Promise<{ prId: string }>;
 }) {
   const { prId } = await params;
-  const detail = await apiGet<DetailResponse>(`/api/pr-reviews/${prId}`, null as unknown as DetailResponse);
+  const [detail, diff] = await Promise.all([
+    apiGet<DetailResponse>(`/api/pr-reviews/${prId}`, null as unknown as DetailResponse),
+    apiGet<DiffResponse>(`/api/pr-reviews/${prId}/diff`, null as unknown as DiffResponse),
+  ]);
 
   if (!detail.data) {
     return (
@@ -73,9 +78,13 @@ export default async function PrReviewDetailPage({
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs font-medium uppercase text-muted-foreground">Changed Files</p>
-          <p className="mt-2 text-sm font-medium">{pr.changedFiles ?? "—"}</p>
+          <p className="mt-2 text-sm font-medium">{pr.changedFiles ?? diff.data?.files.length ?? "—"}</p>
         </div>
       </div>
+
+      <Section title="Diff Viewer">
+        <PrDiffViewer prId={prId} diff={diff.data} comments={pr.comments} />
+      </Section>
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <Section title="Review Runs">
@@ -129,32 +138,6 @@ export default async function PrReviewDetailPage({
           )}
         </Section>
       </div>
-
-      <Section title="Draft Comments">
-        {pr.comments.length ? (
-          <div className="divide-y divide-border rounded-lg border border-border">
-            {pr.comments.map((comment) => (
-              <div key={comment.id} className="p-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <StatusPill value={comment.severity} />
-                  <StatusPill value={comment.category} />
-                  <StatusPill value={comment.status} />
-                  <span className="font-mono text-xs text-muted-foreground">{comment.filePath}</span>
-                  {comment.line ? (
-                    <span className="text-xs text-muted-foreground">:{comment.line}</span>
-                  ) : null}
-                </div>
-                <p className="mt-2 text-muted-foreground">{comment.body}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title="No draft comments"
-            description="Run a review to generate draft comments for this pull request."
-          />
-        )}
-      </Section>
     </div>
   );
 }

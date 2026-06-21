@@ -241,3 +241,34 @@ export type GitHubPrReviewDetail = GitHubPullRequestRef & {
   reviewRuns: PrReviewRunRef[];
   comments: PrReviewCommentRef[];
 };
+
+export type PrDiffFileStatus = "added" | "removed" | "modified" | "renamed" | "copied" | "changed" | "unchanged";
+
+export type PrDiffFile = {
+  filename: string;
+  previousFilename?: string;
+  status: PrDiffFileStatus;
+  additions: number;
+  deletions: number;
+  changes: number;
+  sha: string;
+  patch?: string;
+  blobUrl?: string;
+  rawUrl?: string;
+};
+
+export type PrDiffSnapshot = {
+  prId: string;
+  headSha: string;
+  baseSha: string;
+  files: PrDiffFile[];
+  fetchedAt: string;
+  objectKey?: string;
+};
+
+export type PrFileContent = {
+  filename: string;
+  side: PrReviewSide;
+  content: string;
+  sha?: string;
+};

@@ -11,10 +11,12 @@ import {
   formatEntityId,
   gitHubPrStatusSchema,
   prReviewQueueQuerySchema,
+  type PrReviewSide,
 } from "@fusion-harness/shared";
 import { Hono } from "hono";
 import type { AppBindings } from "../env";
 import { requireAccessIdentity } from "../services/auth";
+import { fetchAndStorePrDiff, fetchFileContent, getStoredPrDiff } from "../services/github-diff";
 import { syncPullRequestsForRepository } from "../services/github-sync";
 
 export const prReviewRoutes = new Hono<AppBindings>()
@@ -118,6 +120,34 @@ export const prReviewRoutes = new Hono<AppBindings>()
   })
   .post("/:prId/start", async (c) => {
     return c.json({ error: "PR review execution is not available in this phase" }, 501);
+  })
+  .get("/:prId/diff", async (c) => {
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const prId = c.req.param("prId");
+    const refresh = c.req.query("refresh") === "1";
+
+    if (!refresh) {
+      const stored = await getStoredPrDiff(c.env, principal.orgId, prId);
+      if (stored) {
+        return c.json(stored);
+      }
+    }
+
+    const snapshot = await fetchAndStorePrDiff(c.env, principal.orgId, prId);
+    return c.json(snapshot);
+  })
+  .get("/:prId/diff/files/content", async (c) => {
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const prId = c.req.param("prId");
+    const filename = c.req.query("filename");
+    const side = c.req.query("side") as PrReviewSide;
+
+    if (!filename || (side !== "LEFT" && side !== "RIGHT")) {
+      return c.json({ error: "filename and side (LEFT or RIGHT) query params are required" }, 400);
+    }
+
+    const content = await fetchFileContent(c.env, principal.orgId, prId, filename, side);
+    return c.json(content);
   })
   .get("/:prId/comments", async (c) => {
     return c.json({ error: "Comment management is not available in this phase" }, 501);
