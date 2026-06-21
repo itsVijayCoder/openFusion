@@ -35,6 +35,10 @@ type ModelOption struct {
 }
 
 func Catalog() []AgentDef {
+	return append(baseCatalog(), readLocalAgentProfiles(baseCatalog())...)
+}
+
+func baseCatalog() []AgentDef {
 	return []AgentDef{
 		{
 			ID:               "opencode",
