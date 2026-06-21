@@ -33,6 +33,8 @@ tokens for native runners.
   actually protected by Cloudflare Access; GitHub OAuth is the default browser
   login path.
 
+Step-by-step GitHub OAuth setup is documented in `Docs/GITHUB_OAUTH_SETUP.md`.
+
 Required production secrets:
 
 ```bash

@@ -54,6 +54,10 @@ npm run api:migrate:local
 
 ## One-time Cloudflare setup
 
+Configure GitHub OAuth before exposing the production login page. Follow
+`Docs/GITHUB_OAUTH_SETUP.md` to create the GitHub OAuth App, set Worker
+secrets, and verify `/api/auth/me`.
+
 1. Authenticate Wrangler:
 
 ```bash
