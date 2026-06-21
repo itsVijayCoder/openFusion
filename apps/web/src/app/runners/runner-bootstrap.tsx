@@ -1,7 +1,7 @@
 "use client";
 
 import { RiClipboardLine, RiRefreshLine, RiTerminalBoxLine } from "@remixicon/react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { apiPost, apiUrl } from "@/lib/api";
 
@@ -11,15 +11,17 @@ type RunnerBootstrapProps = {
 
 type CommandKind = "macos" | "windows" | "manual" | "dev";
 
+const productionAppUrl = "https://fusion-harness.asthrix.workers.dev";
+const productionApiUrl = "https://fusion-api.asthrix.workers.dev";
+
 export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
   const [copied, setCopied] = useState<CommandKind | undefined>();
   const [copyError, setCopyError] = useState<string | undefined>();
-  const cloudUrl = useMemo(() => apiUrl("").replace(/\/$/, ""), []);
-  const appUrl = useMemo(() => (typeof window === "undefined" ? "https://fusion-harness.asthrix.workers.dev" : window.location.origin), []);
   const preferredInstall = useMemo<"macos" | "windows">(() => {
     if (typeof navigator === "undefined") return "macos";
     return /windows|win32|win64/i.test(`${navigator.userAgent} ${navigator.platform}`) ? "windows" : "macos";
   }, []);
+  const [appUrl, cloudUrl] = useRuntimeUrls().split("|");
   const macosInstallerUrl = `${appUrl}/install/macos.sh`;
   const macosInstallCommand = installCommand("macos", "<generated-runner-token>");
   const windowsInstallerUrl = `${appUrl}/install/windows.ps1`;
@@ -106,6 +108,23 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
       </div>
     </section>
   );
+}
+
+function useRuntimeUrls() {
+  return useSyncExternalStore(subscribeRuntimeUrls, runtimeUrlsSnapshot, runtimeUrlsServerSnapshot);
+}
+
+function subscribeRuntimeUrls() {
+  return () => {};
+}
+
+function runtimeUrlsSnapshot() {
+  if (typeof window === "undefined") return runtimeUrlsServerSnapshot();
+  return `${window.location.origin}|${apiUrl("").replace(/\/$/, "")}`;
+}
+
+function runtimeUrlsServerSnapshot() {
+  return `${productionAppUrl}|${productionApiUrl}`;
 }
 
 async function createRunnerToken() {

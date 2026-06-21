@@ -525,6 +525,7 @@ export async function heartbeatRunner(db: D1DatabaseLike, orgId: string, runnerI
 }
 
 export async function listRunners(db: D1DatabaseLike, orgId: string): Promise<RunnerRef[]> {
+  const now = new Date().toISOString();
   const [{ results: runnerRows }, { results: toolRows }] = await Promise.all([
     db.prepare("SELECT * FROM runners WHERE org_id = ? ORDER BY last_seen_at DESC, created_at DESC").bind(orgId).all<RunnerRow>(),
     db
@@ -540,7 +541,7 @@ export async function listRunners(db: D1DatabaseLike, orgId: string): Promise<Ru
   ]);
 
   const toolsByRunner = groupBy(toolRows, (row) => row.runner_id);
-  return runnerRows.map((row) => mapRunner(row, toolsByRunner.get(row.id) ?? []));
+  return runnerRows.map((row) => mapRunner(row, toolsByRunner.get(row.id) ?? [], now));
 }
 
 export async function getRunner(db: D1DatabaseLike, orgId: string, runnerId: string): Promise<RunnerRef | null> {
@@ -552,7 +553,7 @@ export async function getRunner(db: D1DatabaseLike, orgId: string, runnerId: str
     .bind(runnerId)
     .all<ToolRow>();
 
-  return mapRunner(row, results);
+  return mapRunner(row, results, new Date().toISOString());
 }
 
 export async function createRunnerJob(db: D1DatabaseLike, input: CreateRunnerJobInput): Promise<RunnerJob> {
@@ -747,12 +748,28 @@ export async function listRunEvents(
 }
 
 export async function listModels(db: D1DatabaseLike, orgId: string): Promise<ModelRef[]> {
-  const { results } = await db
-    .prepare("SELECT * FROM models WHERE org_id = ? ORDER BY availability DESC, adapter ASC, model ASC")
-    .bind(orgId)
-    .all<ModelRow>();
+  const [{ results: modelRows }, { results: runnerRows }] = await Promise.all([
+    db
+      .prepare("SELECT * FROM models WHERE org_id = ? ORDER BY availability DESC, adapter ASC, model ASC")
+      .bind(orgId)
+      .all<ModelRow>(),
+    db.prepare("SELECT * FROM runners WHERE org_id = ?").bind(orgId).all<RunnerRow>(),
+  ]);
 
-  return results.map(mapModel).filter(isUserVisibleModel);
+  const now = new Date().toISOString();
+  const runnerStatusById = new Map(runnerRows.map((row) => [row.id, effectiveRunnerStatus(row, now)]));
+
+  const visibleModels = modelRows
+    .map((row) => {
+      const model = mapModel(row);
+      if (model.runnerId && runnerStatusById.get(model.runnerId) !== "online") {
+        return { ...model, availability: "unavailable" as const };
+      }
+      return model;
+    })
+    .filter(isUserVisibleModel);
+
+  return dedupeRunnerModels(visibleModels, orgId);
 }
 
 export async function ensureModel(db: D1DatabaseLike, input: EnsureModelInput): Promise<ModelRef> {
@@ -764,6 +781,7 @@ export async function ensureModel(db: D1DatabaseLike, input: EnsureModelInput): 
        )
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
+         org_id = excluded.org_id,
          runner_id = COALESCE(excluded.runner_id, models.runner_id),
          adapter = excluded.adapter,
          provider = excluded.provider,
@@ -1007,10 +1025,11 @@ async function replaceRunnerModels(db: D1DatabaseLike, input: RunnerRegistration
   await db
     .prepare(
       `DELETE FROM models
-       WHERE runner_id = ?
+       WHERE org_id = ?
+         AND runner_id = ?
          AND id NOT IN (SELECT model_id FROM panel_outputs)`,
     )
-    .bind(input.runnerId)
+    .bind(input.orgId, input.runnerId)
     .run();
 
   for (const model of input.models ?? []) {
@@ -1026,6 +1045,7 @@ async function replaceRunnerModels(db: D1DatabaseLike, input: RunnerRegistration
          )
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
+           org_id = excluded.org_id,
            runner_id = excluded.runner_id,
            adapter = excluded.adapter,
            provider = excluded.provider,
@@ -1039,7 +1059,7 @@ async function replaceRunnerModels(db: D1DatabaseLike, input: RunnerRegistration
            updated_at = excluded.updated_at`,
       )
       .bind(
-        model.id,
+        scopedModelId(input.orgId, model.id),
         input.orgId,
         input.runnerId,
         model.adapter,
@@ -1056,6 +1076,55 @@ async function replaceRunnerModels(db: D1DatabaseLike, input: RunnerRegistration
       )
       .run();
   }
+}
+
+function scopedModelId(orgId: string, modelId: string) {
+  return `${orgId}:${modelId}`;
+}
+
+function dedupeRunnerModels(models: ModelRef[], orgId: string) {
+  const seen = new Map<string, ModelRef>();
+  const deduped: ModelRef[] = [];
+
+  for (const model of models) {
+    if (!model.runnerId) {
+      deduped.push(model);
+      continue;
+    }
+
+    const key = [model.runnerId, model.adapter, model.provider ?? "", model.model].join("\0");
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, model);
+      deduped.push(model);
+      continue;
+    }
+
+    const preferred = preferRunnerModel(existing, model, orgId);
+    if (preferred !== existing) {
+      seen.set(key, preferred);
+      const index = deduped.indexOf(existing);
+      if (index >= 0) deduped[index] = preferred;
+    }
+  }
+
+  return deduped;
+}
+
+function preferRunnerModel(left: ModelRef, right: ModelRef, orgId: string) {
+  return runnerModelScore(right, orgId) > runnerModelScore(left, orgId) ? right : left;
+}
+
+function runnerModelScore(model: ModelRef, orgId: string) {
+  const availabilityScore: Record<ModelRef["availability"], number> = {
+    verified: 50,
+    listed: 40,
+    detected: 30,
+    configured_unverified: 20,
+    unavailable: 0,
+  };
+
+  return (model.id.startsWith(`${orgId}:`) ? 100 : 0) + availabilityScore[model.availability];
 }
 
 function isUserVisibleModel(model: Pick<ModelRef, "model" | "source">) {
@@ -1121,7 +1190,7 @@ function mapRunEvent(row: RunEventRow): RunEvent {
   };
 }
 
-function mapRunner(row: RunnerRow, tools: ToolRow[]): RunnerRef {
+function mapRunner(row: RunnerRow, tools: ToolRow[], now = new Date().toISOString()): RunnerRef {
   return {
     id: row.id,
     orgId: row.org_id,
@@ -1130,7 +1199,7 @@ function mapRunner(row: RunnerRow, tools: ToolRow[]): RunnerRef {
     os: row.os,
     arch: row.arch,
     version: row.version,
-    status: row.status,
+    status: effectiveRunnerStatus(row, now),
     capabilities: parseJson<RunnerRef["capabilities"]>(row.capabilities_json, {
       adapters: [],
       executors: [],
@@ -1143,6 +1212,17 @@ function mapRunner(row: RunnerRow, tools: ToolRow[]): RunnerRef {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function effectiveRunnerStatus(row: RunnerRow, now: string): RunnerRef["status"] {
+  if (row.status !== "online") return row.status;
+  if (!row.last_seen_at) return "offline";
+
+  const lastSeenMs = Date.parse(row.last_seen_at);
+  const nowMs = Date.parse(now);
+  if (!Number.isFinite(lastSeenMs) || !Number.isFinite(nowMs)) return row.status;
+
+  return nowMs - lastSeenMs > 2 * 60 * 1000 ? "offline" : "online";
 }
 
 function mapTool(row: ToolRow): ToolRef {

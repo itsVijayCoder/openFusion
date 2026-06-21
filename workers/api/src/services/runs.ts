@@ -901,22 +901,20 @@ function parseJson<T>(value: string): T | undefined {
 
 function resolveRunner(model: ModelRef, runners: RunnerRef[]) {
   if (model.runnerId) {
-    const exactRunner = runners.find((runner) => runner.id === model.runnerId && runner.status !== "disabled");
+    const exactRunner = runners.find((runner) => runner.id === model.runnerId && runner.status === "online");
     if (exactRunner) return exactRunner;
   }
 
-  const candidates = runners.filter((runner) => runner.status !== "disabled" && runner.capabilities.adapters.includes(model.adapter));
-  return candidates.find((runner) => runner.status === "online") ?? candidates[0];
+  return runners.find((runner) => runner.status === "online" && runner.capabilities.adapters.includes(model.adapter));
 }
 
 function resolveRunnerForStep(step: FusionExecutionStep, runners: RunnerRef[]) {
   if (step.runnerId) {
-    const exactRunner = runners.find((runner) => runner.id === step.runnerId && runner.status !== "disabled");
+    const exactRunner = runners.find((runner) => runner.id === step.runnerId && runner.status === "online");
     if (exactRunner) return exactRunner;
   }
 
-  const candidates = runners.filter((runner) => runner.status !== "disabled" && step.adapter && runner.capabilities.adapters.includes(step.adapter));
-  return candidates.find((runner) => runner.status === "online") ?? candidates[0];
+  return runners.find((runner) => runner.status === "online" && step.adapter && runner.capabilities.adapters.includes(step.adapter));
 }
 
 function renderMessages(messages: FusionRunRequest["messages"]) {

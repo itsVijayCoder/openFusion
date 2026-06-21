@@ -1,5 +1,6 @@
 "use client";
 
+import type { ModelRef } from "@fusion-harness/shared";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { FusionComposer } from "./fusion-composer";
@@ -7,10 +8,15 @@ import { ModelPicker } from "./model-picker";
 import { Sidebar } from "./sidebar";
 import { TopNav } from "./top-nav";
 import type { FusionChat, FusionMode, ModelOption } from "./types";
+import { toModelOption } from "./types";
 import { apiDelete, apiPost, apiUrl } from "@/lib/api";
 
 type FusionAppProps = {
-  models: ModelOption[];
+  models?: ModelOption[];
+};
+
+type ModelInventoryResponse = {
+  data: ModelRef[];
 };
 
 const modeToPreset: Record<FusionMode, string | undefined> = {
@@ -19,8 +25,11 @@ const modeToPreset: Record<FusionMode, string | undefined> = {
   custom: undefined,
 };
 
-export function FusionApp({ models }: FusionAppProps) {
+export function FusionApp({ models: initialModels = [] }: FusionAppProps) {
   const router = useRouter();
+  const [models, setModels] = useState<ModelOption[]>(initialModels);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<FusionMode>("custom");
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
@@ -33,8 +42,41 @@ export function FusionApp({ models }: FusionAppProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [fusePickerOpen, setFusePickerOpen] = useState(false);
 
-  const selectedModels = models.filter((m) => selectedModelIds.includes(m.id));
-  const fuseModel = models.find((m) => m.id === fuseModelId) ?? null;
+  const selectedModels = models.filter((m) => selectedModelIds.includes(m.id) && m.available);
+  const fuseModel = models.find((m) => m.id === fuseModelId && m.available) ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadModels() {
+      try {
+        const res = await fetch(apiUrl("/api/models"), {
+          cache: "no-store",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `API returned ${res.status}`);
+        }
+        const body = (await res.json()) as ModelInventoryResponse;
+        if (!cancelled) {
+          setModels(body.data.map(toModelOption));
+          setModelsError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setModelsError(err instanceof Error ? err.message : "Unable to load models");
+        }
+      } finally {
+        if (!cancelled) setModelsLoading(false);
+      }
+    }
+
+    void loadModels();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +121,9 @@ export function FusionApp({ models }: FusionAppProps) {
   }, []);
 
   const handleSend = useCallback(async () => {
-    if (!prompt.trim() || selectedModelIds.length === 0 || sending) return;
+    const runnableModels = models.filter((model) => selectedModelIds.includes(model.id) && model.available);
+    const runnableFuseModel = models.find((model) => model.id === fuseModelId && model.available);
+    if (!prompt.trim() || runnableModels.length === 0 || sending) return;
 
     setSending(true);
     setError(null);
@@ -89,8 +133,8 @@ export function FusionApp({ models }: FusionAppProps) {
         preset: modeToPreset[mode],
         permissionProfile: "readonly",
         providerPolicy: "manual",
-        analysisModels: selectedModelIds,
-        judgeModel: fuseModelId ?? undefined,
+        analysisModels: runnableModels.map((model) => model.id),
+        judgeModel: runnableFuseModel?.id,
         messages: [{ role: "user", content: prompt }],
         stream: true,
       });
@@ -99,7 +143,7 @@ export function FusionApp({ models }: FusionAppProps) {
       setError(err instanceof Error ? err.message : "Failed to create run");
       setSending(false);
     }
-  }, [prompt, selectedModelIds, sending, mode, fuseModelId, router]);
+  }, [prompt, models, selectedModelIds, sending, mode, fuseModelId, router]);
 
   const handleNewFusion = useCallback(() => {
     setPrompt("");
@@ -160,6 +204,11 @@ export function FusionApp({ models }: FusionAppProps) {
         />
         <main className="min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[680px] px-6 pb-12">
+            {modelsLoading ? (
+              <div className="mt-6 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+                Loading signed-in local models...
+              </div>
+            ) : null}
             <FusionComposer
               prompt={prompt}
               mode={mode}
@@ -172,7 +221,7 @@ export function FusionApp({ models }: FusionAppProps) {
               onPickFuseModel={() => setFusePickerOpen(true)}
               onSend={handleSend}
               sending={sending}
-              error={error}
+              error={error ?? modelsError}
             />
           </div>
         </main>
