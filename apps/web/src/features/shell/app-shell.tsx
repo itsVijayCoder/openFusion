@@ -6,6 +6,7 @@ import {
   RiDashboardLine,
   RiGitBranchLine,
   RiGitPullRequestLine,
+  RiGithubFill,
   RiInformationLine,
   RiKey2Line,
   RiMoonLine,
@@ -37,6 +38,7 @@ const navGroups = [
     items: [
       { href: "/workspaces", label: "Workspaces", icon: RiCodeSSlashLine },
       { href: "/pr-reviews", label: "PR Reviews", icon: RiGitPullRequestLine },
+      { href: "/settings/github", label: "GitHub", icon: RiGithubFill },
       { href: "/settings/team", label: "Team", icon: RiShieldCheckLine },
       { href: "/settings/api", label: "API", icon: RiKey2Line },
       { href: "/settings/mcp", label: "MCP", icon: RiArchiveLine },
@@ -110,7 +112,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               Fusion
             </Link>
             <nav className="ml-auto flex gap-1 overflow-x-auto">
-              {navGroups[0].items.slice(0, 5).map((item) => (
+              {[...navGroups[0].items.slice(0, 5), ...navGroups[1].items.slice(0, 2)].map((item) => (
                 <Link key={item.href} href={item.href} className="rounded-md px-2 py-1 text-xs text-muted-foreground">
                   {item.label}
                 </Link>

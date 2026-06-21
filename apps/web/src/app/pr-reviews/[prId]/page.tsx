@@ -5,6 +5,7 @@ import { DataNotice, EmptyState, PageHeader, Section, StatusPill } from "@/compo
 import { apiGet } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { PrDiffViewer } from "@/features/pr-reviews/pr-diff-viewer";
+import { PrActions, PublishButton, CommentEditor } from "@/features/pr-reviews/pr-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,9 @@ export default async function PrReviewDetailPage({
   }
 
   const pr = detail.data;
+  const hasDraftComments = pr.comments.some(
+    (c) => c.status === "draft" || c.status === "edited" || c.status === "approved",
+  );
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -45,7 +49,9 @@ export default async function PrReviewDetailPage({
         title={`#${pr.number} ${pr.title}`}
         description={`${pr.repo.fullName} · ${pr.baseRef} ← ${pr.headRef}`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <PrActions prId={prId} status={pr.status} />
+            {hasDraftComments ? <PublishButton prId={prId} /> : null}
             <Button asChild variant="secondary" size="sm">
               <Link href="/pr-reviews">Back to queue</Link>
             </Button>
@@ -138,6 +144,48 @@ export default async function PrReviewDetailPage({
           )}
         </Section>
       </div>
+
+      <Section title="Draft Comments">
+        {pr.comments.length ? (
+          <div className="divide-y divide-border rounded-lg border border-border">
+            {pr.comments.map((comment) => (
+              <div key={comment.id} className="p-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <StatusPill value={comment.severity} />
+                  <StatusPill value={comment.category} />
+                  <StatusPill value={comment.status} />
+                  <span className="font-mono text-xs text-muted-foreground">{comment.filePath}</span>
+                  {comment.line ? (
+                    <span className="text-xs text-muted-foreground">:{comment.line}</span>
+                  ) : null}
+                </div>
+                <div className="mt-2">
+                  <CommentEditor
+                    commentId={comment.id}
+                    initialBody={comment.body}
+                    prId={prId}
+                  />
+                </div>
+                {comment.suggestedChange ? (
+                  <pre className="mt-2 overflow-x-auto rounded border border-border bg-muted p-2 text-xs">
+                    <code>{comment.suggestedChange}</code>
+                  </pre>
+                ) : null}
+                {comment.evidence ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    <span className="font-medium">Evidence:</span> {comment.evidence}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="No draft comments"
+            description="Run a review to generate draft comments for this pull request."
+          />
+        )}
+      </Section>
     </div>
   );
 }

@@ -43,18 +43,57 @@ export function Metric({ label, value, detail }: { label: string; value: string 
   );
 }
 
+const positiveValues = new Set([
+  "online",
+  "completed",
+  "verified",
+  "connected",
+  "enabled",
+  "reviewed",
+  "active",
+  "approved",
+  "success",
+  "passed",
+]);
+
+const negativeValues = new Set([
+  "failed",
+  "error",
+  "unavailable",
+  "not_connected",
+  "disabled",
+  "rejected",
+  "cancelled",
+  "timeout",
+  "outdated",
+  "stale",
+]);
+
+const warningValues = new Set([
+  "pending",
+  "assigned",
+  "queued",
+  "running",
+  "leased",
+  "paused",
+  "waiting_approval",
+  "edited",
+  "request_changes",
+  "action_required",
+]);
+
 export function StatusPill({ value }: { value: string }) {
+  const normalized = value.toLowerCase();
+  const tone = positiveValues.has(normalized)
+    ? "border-primary/20 bg-primary/10 text-primary"
+    : negativeValues.has(normalized)
+      ? "border-destructive/20 bg-destructive/10 text-destructive"
+      : warningValues.has(normalized)
+        ? "border-yellow-500/20 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
+        : "border-border bg-muted text-muted-foreground";
+
   return (
-    <span
-      className={cn(
-        "inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium",
-        value === "online" || value === "completed" || value === "verified"
-          ? "border-primary/20 bg-primary/10 text-primary"
-          : value === "failed" || value === "error" || value === "unavailable"
-            ? "border-destructive/20 bg-destructive/10 text-destructive"
-            : "border-border bg-muted text-muted-foreground",
-      )}
-    >
+    <span className={cn("inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium", tone)}>
       {value.replace(/_/g, " ")}
     </span>
   );

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { DataNotice, EmptyState, PageHeader, Section, StatusPill } from "@/components/product-ui";
 import { apiGet } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { GitHubActions, UserLinkForm } from "@/features/pr-reviews/github-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -41,20 +42,21 @@ export default async function GitHubSettingsPage() {
     apiGet<WorkspacesResponse>("/api/workspaces", { data: [] }),
   ]);
 
-  const showFallback = status.source === "fallback";
-
   return (
     <div className="flex flex-col gap-6 p-6">
       <PageHeader
         title="GitHub Settings"
         description="Connect the Fusion GitHub App, manage repository links, reviewer mappings, and auto-review policies."
         actions={
-          <Button asChild variant="secondary" size="sm">
-            <Link href="/pr-reviews">Open PR Reviews</Link>
-          </Button>
+          <div className="flex gap-2">
+            <GitHubActions />
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/pr-reviews">Open PR Reviews</Link>
+            </Button>
+          </div>
         }
       />
-      <DataNotice source={showFallback ? "fallback" : "api"} error={status.error} />
+      <DataNotice source={status.source} error={status.error} />
 
       <Section title="GitHub App Connection">
         <div className="rounded-lg border border-border bg-card p-4">
@@ -94,6 +96,9 @@ export default async function GitHubSettingsPage() {
                 Set <code className="font-mono">GITHUB_APP_ID</code>,{" "}
                 <code className="font-mono">GITHUB_APP_PRIVATE_KEY</code>, and{" "}
                 <code className="font-mono">GITHUB_WEBHOOK_SECRET</code> as Worker secrets, then sync.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                See <Link href="/Docs/GITHUB_APP_SETUP.md" className="text-primary hover:underline">setup guide</Link> for instructions.
               </p>
             </div>
           )}
@@ -207,6 +212,9 @@ export default async function GitHubSettingsPage() {
             description="Map Fusion users to GitHub logins so review requests trigger the correct reviewer."
           />
         )}
+        <div className="mt-3">
+          <UserLinkForm userId="usr_developer_fusion_local" />
+        </div>
       </Section>
     </div>
   );
