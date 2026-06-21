@@ -50,6 +50,7 @@ export class GitHubAppAuth {
         accept: "application/vnd.github+json",
         authorization: `Bearer ${appJwt}`,
         "x-github-api-version": "2022-11-28",
+        "user-agent": "fusion-harness-pr-review",
       },
     });
 
@@ -73,6 +74,7 @@ export class GitHubAppAuth {
         accept: "application/vnd.github+json",
         authorization: `Bearer ${appJwt}`,
         "x-github-api-version": "2022-11-28",
+        "user-agent": "fusion-harness-pr-review",
         ...init.headers,
       },
     });
@@ -86,6 +88,7 @@ export class GitHubAppAuth {
         accept: "application/vnd.github+json",
         authorization: `token ${token}`,
         "x-github-api-version": "2022-11-28",
+        "user-agent": "fusion-harness-pr-review",
         ...init.headers,
       },
     });
@@ -178,15 +181,23 @@ export function pemRsaPrivateKeyToJwk(pem: string): RsaJwk {
   const components = parseRsaPrivateKeyDer(der);
   return {
     kty: "RSA",
-    n: base64UrlEncode(components.modulus),
-    e: base64UrlEncode(components.publicExponent),
-    d: base64UrlEncode(components.privateExponent),
-    p: base64UrlEncode(components.prime1),
-    q: base64UrlEncode(components.prime2),
-    dp: base64UrlEncode(components.exponent1),
-    dq: base64UrlEncode(components.exponent2),
-    qi: base64UrlEncode(components.coefficient),
+    n: base64UrlEncode(stripLeadingZeros(components.modulus)),
+    e: base64UrlEncode(stripLeadingZeros(components.publicExponent)),
+    d: base64UrlEncode(stripLeadingZeros(components.privateExponent)),
+    p: base64UrlEncode(stripLeadingZeros(components.prime1)),
+    q: base64UrlEncode(stripLeadingZeros(components.prime2)),
+    dp: base64UrlEncode(stripLeadingZeros(components.exponent1)),
+    dq: base64UrlEncode(stripLeadingZeros(components.exponent2)),
+    qi: base64UrlEncode(stripLeadingZeros(components.coefficient)),
   };
+}
+
+function stripLeadingZeros(bytes: Uint8Array): Uint8Array {
+  let i = 0;
+  while (i < bytes.length - 1 && bytes[i] === 0) {
+    i += 1;
+  }
+  return bytes.subarray(i);
 }
 
 function pemToDer(pem: string): Uint8Array {

@@ -129,11 +129,20 @@ export const prReviewRoutes = new Hono<AppBindings>()
   .post("/:prId/start", async (c) => {
     const principal = requireAccessIdentity(c.req.raw.headers);
     const body = prReviewStartSchema.parse(await c.req.json().catch(() => ({})));
-    const reviewRun = await startPrReview(c.env, principal, c.req.param("prId"), {
-      reviewMode: body.reviewMode,
-      runnerId: body.runnerId,
-    });
-    return c.json(reviewRun, 202);
+    try {
+      const reviewRun = await startPrReview(c.env, principal, c.req.param("prId"), {
+        reviewMode: body.reviewMode,
+        runnerId: body.runnerId,
+        adapter: body.adapter,
+        model: body.model,
+      });
+      return c.json(reviewRun, 202);
+    } catch (error) {
+      if (error instanceof PrReviewError) {
+        return c.json({ error: error.message }, error.statusCode);
+      }
+      throw error;
+    }
   })
   .get("/:prId/diff", async (c) => {
     const principal = requireAccessIdentity(c.req.raw.headers);

@@ -45,6 +45,8 @@ const COMMENT_BUDGETS: Record<PrReviewMode, number> = {
 export type StartPrReviewInput = {
   reviewMode?: PrReviewMode;
   runnerId?: string;
+  adapter?: AdapterId;
+  model?: string;
 };
 
 export async function startPrReview(
@@ -73,6 +75,8 @@ export async function startPrReview(
   }
 
   const reviewMode = input.reviewMode ?? DEFAULT_REVIEW_MODE;
+  const adapter = input.adapter ?? DEFAULT_ADAPTER;
+  const model = input.model ?? "default";
   const runnerId = input.runnerId ?? repo.defaultRunnerId;
   if (!runnerId) {
     throw new PrReviewError("No runner is configured for this repository", 422);
@@ -124,8 +128,8 @@ export async function startPrReview(
     jobId,
     runId: fusionRunId,
     kind: "pr_review",
-    adapter: DEFAULT_ADAPTER,
-    model: "default",
+    adapter,
+    model,
     role: "senior_reviewer",
     workspaceId: repo.workspaceId,
     workspacePath: undefined,
@@ -188,6 +192,8 @@ export async function startPrReview(
       jobId,
       runnerId,
       reviewMode,
+      adapter,
+      model,
       repoFullName: repo.fullName,
       prNumber: pr.number,
     },

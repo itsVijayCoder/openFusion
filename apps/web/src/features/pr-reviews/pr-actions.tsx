@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   RiCheckLine,
   RiCloseLine,
@@ -12,9 +12,111 @@ import { Button } from "@/components/ui/button";
 import { apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+type AdapterId =
+  | "opencode"
+  | "claude"
+  | "codex"
+  | "cursor-agent"
+  | "gemini"
+  | "qwen"
+  | "qoder"
+  | "copilot"
+  | "deepseek"
+  | "kimi"
+  | "hermes"
+  | "pi"
+  | "aider"
+  | "devin"
+  | "grok-build"
+  | "amp"
+  | "kiro"
+  | "kilo"
+  | "vibe";
+
+const ADAPTER_LABELS: Record<AdapterId, string> = {
+  opencode: "OpenCode",
+  claude: "Claude Code",
+  codex: "Codex",
+  "cursor-agent": "Cursor Agent",
+  gemini: "Gemini CLI",
+  qwen: "Qwen",
+  qoder: "Qoder",
+  copilot: "GitHub Copilot",
+  deepseek: "DeepSeek",
+  kimi: "Kimi",
+  hermes: "Hermes",
+  pi: "Pi Agent",
+  aider: "Aider",
+  devin: "Devin",
+  "grok-build": "Grok Build",
+  amp: "Amp",
+  kiro: "Kiro",
+  kilo: "Kilo",
+  vibe: "Mistral Vibe",
+};
+
+const ADAPTER_OPTIONS = Object.entries(ADAPTER_LABELS) as [AdapterId, string][];
+
+type ModelOption = {
+  id: string;
+  label: string;
+  provider: string;
+};
+
+type ModelsResponse = {
+  aliases: Array<{ id: string; owned_by: string }>;
+  data: Array<{ id: string; provider?: string; modelId?: string; name?: string }>;
+};
+
+const DEFAULT_MODELS: ModelOption[] = [
+  { id: "default", label: "Default", provider: "fusion" },
+  { id: "local/fusion", label: "Fusion (balanced)", provider: "fusion" },
+  { id: "local/fusion-fast", label: "Fusion Fast", provider: "fusion" },
+  { id: "local/fusion-quality", label: "Fusion Quality", provider: "fusion" },
+  { id: "local/codex", label: "Codex (local)", provider: "codex" },
+  { id: "local/opencode", label: "OpenCode (local)", provider: "opencode" },
+];
+
+const REVIEW_MODES = [
+  { value: "quick", label: "Quick" },
+  { value: "standard", label: "Standard" },
+  { value: "deep", label: "Deep" },
+  { value: "security", label: "Security" },
+] as const;
+
 export function PrActions({ prId, status }: { prId: string; status: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  const [adapter, setAdapter] = useState<AdapterId>("codex");
+  const [model, setModel] = useState("default");
+  const [reviewMode, setReviewMode] = useState<"quick" | "standard" | "deep" | "security">("standard");
+  const [models, setModels] = useState<ModelOption[]>(DEFAULT_MODELS);
+
+  useEffect(() => {
+    fetch(apiUrl("/api/models"))
+      .then((r) => r.json() as Promise<ModelsResponse>)
+      .then((data) => {
+        const dbModels: ModelOption[] = (data.data ?? []).map((m) => ({
+          id: m.modelId ?? m.id,
+          label: m.name ?? m.modelId ?? m.id,
+          provider: m.provider ?? "custom",
+        }));
+        const aliasModels: ModelOption[] = (data.aliases ?? []).map((a) => ({
+          id: a.id,
+          label: a.id.replace("local/", "").replace(/^./, (c) => c.toUpperCase()),
+          provider: a.owned_by,
+        }));
+        const all = [...DEFAULT_MODELS, ...aliasModels, ...dbModels];
+        const seen = new Set<string>();
+        const deduped = all.filter((m) => {
+          if (seen.has(m.id)) return false;
+          seen.add(m.id);
+          return true;
+        });
+        if (deduped.length > 0) setModels(deduped);
+      })
+      .catch(() => {});
+  }, []);
 
   async function action(name: string, path: string, method = "POST") {
     setBusy(name);
@@ -28,18 +130,77 @@ export function PrActions({ prId, status }: { prId: string; status: string }) {
     }
   }
 
+  async function handleStart() {
+    setBusy("start");
+    try {
+      await fetch(apiUrl(`/api/pr-reviews/${prId}/start`), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ adapter, model, reviewMode }),
+      });
+      router.refresh();
+    } catch {
+      // ignore
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const canStart =
+    status === "not_assigned" ||
+    status === "assigned" ||
+    status === "stale" ||
+    status === "failed";
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {status === "assigned" || status === "stale" || status === "failed" ? (
-        <Button
-          onClick={() => action("start", "start", "POST")}
-          disabled={busy !== null}
-          variant="default"
-          size="sm"
-        >
-          <RiPlayLine aria-hidden className="size-4" />
-          {busy === "start" ? "Starting..." : "Start Review"}
-        </Button>
+      {canStart ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-background p-0.5">
+            <select
+              value={adapter}
+              onChange={(e) => setAdapter(e.target.value as AdapterId)}
+              className="h-6 cursor-pointer bg-transparent px-2 text-xs font-medium outline-none"
+              title="Provider (agent CLI)"
+            >
+              {ADAPTER_OPTIONS.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <div className="h-4 w-px bg-border" />
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="h-6 max-w-[140px] cursor-pointer bg-transparent px-2 text-xs outline-none"
+              title="Model"
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <div className="h-4 w-px bg-border" />
+            <select
+              value={reviewMode}
+              onChange={(e) => setReviewMode(e.target.value as typeof reviewMode)}
+              className="h-6 cursor-pointer bg-transparent px-2 text-xs outline-none"
+              title="Review depth"
+            >
+              {REVIEW_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button onClick={handleStart} disabled={busy !== null} variant="default" size="sm">
+            <RiPlayLine aria-hidden className="size-4" />
+            {busy === "start" ? "Starting..." : "Start Review"}
+          </Button>
+        </div>
       ) : null}
       <Button
         onClick={() => action("sync", "sync", "POST")}

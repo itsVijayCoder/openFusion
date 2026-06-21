@@ -114,8 +114,13 @@ export const githubRoutes = new Hono<AppBindings>()
   })
   .post("/sync", async (c) => {
     const principal = requireAccessIdentity(c.req.raw.headers);
-    const result = await syncAll(c.env, principal.orgId);
-    return c.json(result, 202);
+    try {
+      const result = await syncAll(c.env, principal.orgId);
+      return c.json(result, 202);
+    } catch (error) {
+      console.error("GitHub sync failed:", error instanceof Error ? error.stack : String(error));
+      return c.json({ error: error instanceof Error ? error.message : "Sync failed" }, 500);
+    }
   })
   .get("/user-links", async (c) => {
     const principal = requireAccessIdentity(c.req.raw.headers);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { adapterIdSchema } from "./zod";
 
 export const gitHubPrStatusSchema = z.enum([
   "not_assigned",
@@ -89,6 +90,8 @@ export const githubUserLinkCreateSchema = z.object({
 export const prReviewStartSchema = z.object({
   reviewMode: prReviewModeSchema.default("standard"),
   runnerId: z.string().min(1).optional(),
+  adapter: adapterIdSchema.optional(),
+  model: z.string().min(1).optional(),
 });
 
 export const prReviewCommentUpdateSchema = z.object({
