@@ -3,6 +3,7 @@ package localagents
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -194,6 +195,7 @@ func Catalog() []AgentDef {
 			Binary:      "pi",
 			EnvOverride: "PI_BIN",
 			VersionArgs: []string{"--version"},
+			FetchModels: fetchPiModels,
 			FallbackModels: models(
 				"anthropic/claude-sonnet-4-5",
 				"anthropic/claude-opus-4-5",
@@ -536,6 +538,61 @@ func ParseCodexDebugModels(output string) []ModelOption {
 		return nil
 	}
 	return options
+}
+
+func ParsePiModels(output string) []ModelOption {
+	lines := strings.Split(output, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	options := []ModelOption{model("default", "Default (CLI config)")}
+	seen := map[string]bool{"default": true}
+	for _, line := range filtered[1:] {
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		provider := parts[0]
+		modelID := parts[1]
+		fullID := provider + "/" + modelID
+		if seen[fullID] {
+			continue
+		}
+		seen[fullID] = true
+		options = append(options, ModelOption{ID: fullID, DisplayName: fullID})
+	}
+	if len(options) <= 1 {
+		return nil
+	}
+	return options
+}
+
+func fetchPiModels(ctx context.Context, def AgentDef, path string, allowedRoots []string) ([]ModelOption, error) {
+	workingDir, roots, cleanup := neutralProbeWorkspace(def.ID, allowedRoots)
+	defer cleanup()
+	result, err := host.Run(ctx, host.CommandSpec{
+		Name:         path,
+		Args:         []string{"--list-models"},
+		WorkingDir:   workingDir,
+		AllowedRoots: roots,
+		Timeout:      20 * time.Second,
+	})
+	if err != nil && result.Stderr == "" {
+		return nil, err
+	}
+	parsed := ParsePiModels(result.Stderr)
+	if len(parsed) == 0 {
+		return nil, fmt.Errorf("pi --list-models returned no models")
+	}
+	return parsed, nil
 }
 
 func modelRef(def AgentDef, option ModelOption, source string) adapters.ModelRef {

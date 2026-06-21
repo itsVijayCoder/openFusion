@@ -252,6 +252,56 @@ func TestListModelsFallsBackWhenFetchModelsErrors(t *testing.T) {
 	}
 }
 
+func TestParsePiModels(t *testing.T) {
+	output := "provider         model                  context  max-out  thinking  images\n" +
+		"anthropic        claude-sonnet-4-5      200K      64K      yes        yes\n" +
+		"openai           gpt-5                  128K      32K      yes        no\n" +
+		"google           gemini-2.5-pro        1M        128K     yes        yes\n"
+	models := ParsePiModels(output)
+	if len(models) != 4 {
+		t.Fatalf("expected default + 3 models, got %d: %#v", len(models), models)
+	}
+	if models[0].ID != "default" {
+		t.Fatalf("expected default first, got %q", models[0].ID)
+	}
+	if models[1].ID != "anthropic/claude-sonnet-4-5" {
+		t.Fatalf("expected anthropic/claude-sonnet-4-5, got %q", models[1].ID)
+	}
+	if models[2].ID != "openai/gpt-5" {
+		t.Fatalf("expected openai/gpt-5, got %q", models[2].ID)
+	}
+	if models[3].ID != "google/gemini-2.5-pro" {
+		t.Fatalf("expected google/gemini-2.5-pro, got %q", models[3].ID)
+	}
+}
+
+func TestParsePiModelsEmpty(t *testing.T) {
+	models := ParsePiModels("")
+	if models != nil {
+		t.Fatalf("expected nil for empty output, got %#v", models)
+	}
+}
+
+func TestParsePiModelsHeaderOnly(t *testing.T) {
+	models := ParsePiModels("provider         model                  context\n")
+	if models != nil {
+		t.Fatalf("expected nil for header-only output, got %#v", models)
+	}
+}
+
+func TestParsePiModelsSkipsComments(t *testing.T) {
+	output := "# comment line\n" +
+		"provider         model\n" +
+		"anthropic        claude-sonnet-4-5\n"
+	models := ParsePiModels(output)
+	if len(models) != 2 {
+		t.Fatalf("expected default + 1 model, got %d: %#v", len(models), models)
+	}
+	if models[1].ID != "anthropic/claude-sonnet-4-5" {
+		t.Fatalf("expected anthropic/claude-sonnet-4-5, got %q", models[1].ID)
+	}
+}
+
 func writeExecutable(t *testing.T, dir string, name string, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
