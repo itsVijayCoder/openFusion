@@ -249,7 +249,7 @@ export default async function GitHubSettingsPage() {
           />
         )}
         <div className="mt-3">
-          <UserLinkForm userId="usr_developer_fusion_local" />
+          <UserLinkForm />
         </div>
       </Section>
     </div>

@@ -62,13 +62,6 @@ type ModelOption = {
   adapter: string;
 };
 
-type RunnerInfo = {
-  id: string;
-  name: string;
-  status: string;
-  adapters: AdapterId[];
-};
-
 type ModelsResponse = {
   aliases: Array<{ id: string; owned_by: string }>;
   data: Array<{
@@ -108,8 +101,8 @@ export function PrActions({ prId, status }: { prId: string; status: string }) {
 
   useEffect(() => {
     Promise.all([
-      fetch(apiUrl("/api/models")).then((r) => r.json() as Promise<ModelsResponse>),
-      fetch(apiUrl("/api/runners")).then((r) => r.json() as Promise<RunnersResponse>),
+      fetch(apiUrl("/api/models"), { credentials: "include" }).then((r) => r.json() as Promise<ModelsResponse>),
+      fetch(apiUrl("/api/runners"), { credentials: "include" }).then((r) => r.json() as Promise<RunnersResponse>),
     ])
       .then(([modelData, runnerData]) => {
         const onlineRunners = (runnerData.data ?? []).filter((r) => r.status === "online");
@@ -135,18 +128,16 @@ export function PrActions({ prId, status }: { prId: string; status: string }) {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [adapter]);
 
   const filteredModels = useMemo(() => {
     const matching = models.filter((m) => m.adapter === adapter);
     if (matching.length > 0) {
-      if (!matching.find((m) => m.id === model)) {
-        setModel(matching[0].id);
-      }
       return matching;
     }
     return [{ id: "default", label: "Default (CLI config)", provider: "", adapter }];
-  }, [models, adapter, model]);
+  }, [models, adapter]);
+  const selectedModel = filteredModels.some((m) => m.id === model) ? model : (filteredModels[0]?.id ?? "default");
 
   const adapterOptions = useMemo(() => {
     if (availableAdapters.length > 0) {
@@ -158,7 +149,7 @@ export function PrActions({ prId, status }: { prId: string; status: string }) {
   async function action(name: string, path: string, method = "POST") {
     setBusy(name);
     try {
-      await fetch(apiUrl(`/api/pr-reviews/${prId}/${path}`), { method });
+      await fetch(apiUrl(`/api/pr-reviews/${prId}/${path}`), { method, credentials: "include" });
       router.refresh();
     } catch {
       // ignore
@@ -172,8 +163,9 @@ export function PrActions({ prId, status }: { prId: string; status: string }) {
     try {
       const res = await fetch(apiUrl(`/api/pr-reviews/${prId}/start`), {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ adapter, model, reviewMode }),
+        body: JSON.stringify({ adapter, model: selectedModel, reviewMode }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -217,7 +209,7 @@ export function PrActions({ prId, status }: { prId: string; status: string }) {
             </select>
             <div className="h-4 w-px bg-border" />
             <select
-              value={model}
+              value={selectedModel}
               onChange={(e) => setModel(e.target.value)}
               className="h-6 max-w-[160px] cursor-pointer bg-transparent px-2 text-xs outline-none"
               title="Model"
@@ -293,6 +285,7 @@ export function PublishButton({ prId }: { prId: string }) {
     try {
       await fetch(apiUrl(`/api/pr-reviews/${prId}/publish`), {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ event: decision }),
       });
@@ -341,6 +334,7 @@ export function CommentEditor({
     try {
       await fetch(apiUrl(`/api/pr-reviews/${prId}/comments/${commentId}`), {
         method: "PATCH",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ body }),
       });
@@ -358,6 +352,7 @@ export function CommentEditor({
     try {
       await fetch(apiUrl(`/api/pr-reviews/${prId}/comments/${commentId}/resolve`), {
         method: "POST",
+        credentials: "include",
       });
       router.refresh();
     } catch {

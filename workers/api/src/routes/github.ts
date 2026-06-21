@@ -49,15 +49,15 @@ export const githubRoutes = new Hono<AppBindings>()
     }
   })
   .get("/installations", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     return c.json({ data: await listGitHubInstallations(c.env.DB, principal.orgId) });
   })
   .get("/repositories", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     return c.json({ data: await listGitHubRepositories(c.env.DB, principal.orgId) });
   })
   .post("/repositories/:repoId/link-workspace", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const repoId = c.req.param("repoId");
     const body = githubRepoLinkWorkspaceSchema.parse(await c.req.json());
     const now = new Date().toISOString();
@@ -85,7 +85,7 @@ export const githubRoutes = new Hono<AppBindings>()
     return c.json(repo);
   })
   .patch("/repositories/:repoId/settings", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const repoId = c.req.param("repoId");
     const body = githubRepoSettingsUpdateSchema.parse(await c.req.json());
     const now = new Date().toISOString();
@@ -113,7 +113,7 @@ export const githubRoutes = new Hono<AppBindings>()
     return c.json(repo);
   })
   .post("/sync", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     try {
       const result = await syncAll(c.env, principal.orgId);
       return c.json(result, 202);
@@ -123,11 +123,11 @@ export const githubRoutes = new Hono<AppBindings>()
     }
   })
   .get("/user-links", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     return c.json({ data: await listGitHubUserLinks(c.env.DB, principal.orgId) });
   })
   .post("/user-links", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const body = githubUserLinkCreateSchema.parse(await c.req.json());
     const now = new Date().toISOString();
 
@@ -156,7 +156,7 @@ export const githubRoutes = new Hono<AppBindings>()
     return c.json(link, 201);
   })
   .delete("/user-links/:userId", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const userId = c.req.param("userId");
     const now = new Date().toISOString();
 
@@ -174,7 +174,7 @@ export const githubRoutes = new Hono<AppBindings>()
     return c.json({ status: "deleted" });
   })
   .get("/repositories/:repoId", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const repo = await getGitHubRepository(c.env.DB, principal.orgId, c.req.param("repoId"));
     if (!repo) {
       return c.json({ error: "Repository not found" }, 404);

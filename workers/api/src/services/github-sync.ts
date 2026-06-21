@@ -91,7 +91,7 @@ export async function syncInstallations(env: Env, orgId: string): Promise<number
 
   for (const installation of installations) {
     await upsertGitHubInstallation(env.DB, {
-      id: formatEntityId("gh_install", String(installation.id)),
+      id: formatEntityId("gh_install", `${orgId}_${installation.id}`),
       orgId,
       installationId: installation.id,
       accountLogin: installation.account.login,
@@ -129,7 +129,7 @@ export async function syncRepositoriesForInstallation(
   for (const repo of body.repositories) {
     const existing = await getGitHubRepositoryByGithubId(env.DB, orgId, repo.id);
     await upsertGitHubRepository(env.DB, {
-      id: existing?.id ?? formatEntityId("gh_repo", String(repo.id)),
+      id: existing?.id ?? formatEntityId("gh_repo", `${orgId}_${repo.id}`),
       orgId,
       installationId,
       githubRepoId: repo.id,
@@ -223,7 +223,7 @@ export async function upsertPullRequestFromGitHub(
   const isFork = pr.head.repo?.full_name !== pr.base.repo.full_name;
 
   const input: UpsertGitHubPullRequestInput = {
-    id: existing?.id ?? formatEntityId("gh_pr", String(pr.id)),
+    id: existing?.id ?? formatEntityId("gh_pr", `${orgId}_${pr.id}`),
     orgId,
     repoId,
     githubPrId: pr.id,

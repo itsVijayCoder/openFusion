@@ -29,7 +29,7 @@ import { syncPullRequestsForRepository } from "../services/github-sync";
 
 export const prReviewRoutes = new Hono<AppBindings>()
   .get("/", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const query = prReviewQueueQuerySchema.parse({
       ...c.req.query(),
       limit: c.req.query("limit") ?? 50,
@@ -44,7 +44,7 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json({ data: items });
   })
   .get("/:prId", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const detail = await getPrReviewDetail(c.env.DB, principal.orgId, c.req.param("prId"));
 
     if (!detail) {
@@ -54,7 +54,7 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(detail);
   })
   .post("/:prId/sync", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const prId = c.req.param("prId");
 
     const pr = await getGitHubPullRequest(c.env.DB, principal.orgId, prId);
@@ -81,7 +81,7 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json({ status: "synced", pullRequests: count }, 202);
   })
   .post("/:prId/mark-reviewed", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const prId = c.req.param("prId");
     const now = new Date().toISOString();
 
@@ -104,7 +104,7 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(updated);
   })
   .post("/:prId/ignore", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const prId = c.req.param("prId");
     const now = new Date().toISOString();
 
@@ -127,7 +127,7 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(updated);
   })
   .post("/:prId/start", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const body = prReviewStartSchema.parse(await c.req.json().catch(() => ({})));
     try {
       const reviewRun = await startPrReview(c.env, principal, c.req.param("prId"), {
@@ -145,7 +145,7 @@ export const prReviewRoutes = new Hono<AppBindings>()
     }
   })
   .get("/:prId/diff", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const prId = c.req.param("prId");
     const refresh = c.req.query("refresh") === "1";
 
@@ -160,7 +160,7 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(snapshot);
   })
   .get("/:prId/diff/files/content", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const prId = c.req.param("prId");
     const filename = c.req.query("filename");
     const side = c.req.query("side") as PrReviewSide;
@@ -173,11 +173,11 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(content);
   })
   .get("/:prId/comments", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     return c.json({ data: await listPrReviewComments(c.env.DB, principal.orgId, c.req.param("prId")) });
   })
   .patch("/:prId/comments/:commentId", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const commentId = c.req.param("commentId");
     const body = prReviewCommentUpdateSchema.parse(await c.req.json());
     const now = new Date().toISOString();
@@ -213,7 +213,7 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(comment);
   })
   .post("/:prId/comments/:commentId/resolve", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const commentId = c.req.param("commentId");
     const now = new Date().toISOString();
 
@@ -232,13 +232,13 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(comment);
   })
   .get("/:prId/runs/:runId/comments", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     return c.json({
       data: await listPrReviewCommentsByRun(c.env.DB, principal.orgId, c.req.param("runId")),
     });
   })
   .post("/:prId/publish", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const body = prReviewPublishSchema.parse(await c.req.json().catch(() => ({})));
     const result = await publishPrReview(c.env, principal, {
       prId: c.req.param("prId"),

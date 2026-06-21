@@ -127,13 +127,14 @@ export async function processGitHubWebhook(
     };
   }
 
-  const orgId = "org_dev";
-
   try {
-    await dispatchWebhookEvent(env, orgId, eventName, payload, now);
+    const orgIds = await resolveWebhookOrgIds(env, payload);
+    for (const orgId of orgIds) {
+      await dispatchWebhookEvent(env, orgId, eventName, payload, now);
+    }
     await completeGitHubWebhookEvent(env.DB, {
       id: webhookEvent.id,
-      orgId,
+      orgId: orgIds[0],
       processedAt: new Date().toISOString(),
     });
 
@@ -147,7 +148,7 @@ export async function processGitHubWebhook(
     const message = error instanceof Error ? error.message : String(error);
     await completeGitHubWebhookEvent(env.DB, {
       id: webhookEvent.id,
-      orgId,
+      orgId: undefined,
       processedAt: new Date().toISOString(),
       error: message,
     });
@@ -160,6 +161,28 @@ export async function processGitHubWebhook(
       error: message,
     };
   }
+}
+
+async function resolveWebhookOrgIds(env: Env, payload: WebhookPayload) {
+  const installationId = payload.installation?.id;
+  if (installationId) {
+    const { results } = await env.DB
+      .prepare("SELECT DISTINCT org_id FROM github_installations WHERE installation_id = ?")
+      .bind(installationId)
+      .all<{ org_id: string }>();
+    if (results.length > 0) return results.map((row) => row.org_id);
+  }
+
+  const repositoryId = payload.repository?.id;
+  if (repositoryId) {
+    const { results } = await env.DB
+      .prepare("SELECT DISTINCT org_id FROM github_repositories WHERE github_repo_id = ?")
+      .bind(repositoryId)
+      .all<{ org_id: string }>();
+    if (results.length > 0) return results.map((row) => row.org_id);
+  }
+
+  return [];
 }
 
 async function dispatchWebhookEvent(
@@ -212,7 +235,7 @@ async function handleInstallationEvent(
   const accountType = installation.account?.type ?? "User";
 
   await upsertGitHubInstallation(env.DB, {
-    id: formatEntityId("gh_install", String(installation.id)),
+    id: formatEntityId("gh_install", `${orgId}_${installation.id}`),
     orgId,
     installationId: installation.id,
     accountLogin,
@@ -249,7 +272,7 @@ async function handleInstallationRepositoriesEvent(
   for (const repo of payload.repositories_added ?? []) {
     const existing = await getGitHubRepositoryByGithubId(env.DB, orgId, repo.id);
     await upsertGitHubRepository(env.DB, {
-      id: existing?.id ?? formatEntityId("gh_repo", String(repo.id)),
+      id: existing?.id ?? formatEntityId("gh_repo", `${orgId}_${repo.id}`),
       orgId,
       installationId,
       githubRepoId: repo.id,
@@ -294,7 +317,7 @@ async function handlePullRequestEvent(
   const isFork = pr.head.repo?.full_name !== pr.base.repo.full_name;
 
   const record = await upsertGitHubPullRequest(env.DB, {
-    id: existing?.id ?? formatEntityId("gh_pr", String(pr.id)),
+    id: existing?.id ?? formatEntityId("gh_pr", `${orgId}_${pr.id}`),
     orgId,
     repoId: repoRecord.id,
     githubPrId: pr.id,
@@ -436,7 +459,7 @@ async function syncInstallationRepositories(env: Env, orgId: string, installatio
   for (const repo of body.repositories) {
     const existing = await getGitHubRepositoryByGithubId(env.DB, orgId, repo.id);
     await upsertGitHubRepository(env.DB, {
-      id: existing?.id ?? formatEntityId("gh_repo", String(repo.id)),
+      id: existing?.id ?? formatEntityId("gh_repo", `${orgId}_${repo.id}`),
       orgId,
       installationId,
       githubRepoId: repo.id,

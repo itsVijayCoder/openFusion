@@ -15,11 +15,11 @@ The Go runner is not deployed to Cloudflare. Install it once on the user's
 trusted machine:
 
 ```bash
-curl -fsSL https://fusion-harness.asthrix.workers.dev/install/macos.sh | bash -s -- --cloud-url https://fusion-api.asthrix.workers.dev
+curl -fsSL https://fusion-harness.asthrix.workers.dev/install/macos.sh | bash -s -- --cloud-url https://fusion-api.asthrix.workers.dev --token <runner-token>
 ```
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://fusion-harness.asthrix.workers.dev/install/windows.ps1'))) --cloud-url 'https://fusion-api.asthrix.workers.dev'"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://fusion-harness.asthrix.workers.dev/install/windows.ps1'))) --cloud-url 'https://fusion-api.asthrix.workers.dev' --token '<runner-token>'"
 ```
 
 The macOS installer registers a LaunchAgent. The Windows installer registers a
@@ -118,11 +118,11 @@ curl https://fusion-api.asthrix.workers.dev/api/runners
 Then install or refresh a local runner:
 
 ```bash
-curl -fsSL https://fusion-harness.asthrix.workers.dev/install/macos.sh | bash -s -- --cloud-url https://fusion-api.asthrix.workers.dev
+curl -fsSL https://fusion-harness.asthrix.workers.dev/install/macos.sh | bash -s -- --cloud-url https://fusion-api.asthrix.workers.dev --token <runner-token>
 ```
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://fusion-harness.asthrix.workers.dev/install/windows.ps1'))) --cloud-url 'https://fusion-api.asthrix.workers.dev'"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://fusion-harness.asthrix.workers.dev/install/windows.ps1'))) --cloud-url 'https://fusion-api.asthrix.workers.dev' --token '<runner-token>'"
 ```
 
 Open the deployed web app and check `/runners`. The runner should appear with

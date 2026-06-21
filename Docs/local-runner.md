@@ -6,17 +6,18 @@ The local runner is a native Go binary under `apps/runner-go`.
 
 For end users, install the runner from the deployed web app. This command works
 from any directory because it does not require a source checkout or
-`package.json`:
+`package.json`. In production, copy the command from the signed-in Agents page
+so it includes a short-lived user-scoped runner token:
 
 ```bash
-curl -fsSL https://fusion-harness.asthrix.workers.dev/install/macos.sh | bash -s -- --cloud-url https://fusion-api.asthrix.workers.dev
+curl -fsSL https://fusion-harness.asthrix.workers.dev/install/macos.sh | bash -s -- --cloud-url https://fusion-api.asthrix.workers.dev --token <runner-token>
 ```
 
 For the current source checkout, the repo-local npm script is also available.
 Run it from the repository root:
 
 ```bash
-npm run runner:install:macos -- --cloud-url https://fusion-api.asthrix.workers.dev
+npm run runner:install:macos -- --cloud-url https://fusion-api.asthrix.workers.dev --token <runner-token>
 ```
 
 The hosted installer downloads `fusion-runner`. The repo-local installer builds
@@ -39,10 +40,11 @@ npm run runner:uninstall:macos -- --all
 
 For end users, install the runner from the deployed web app. This command works
 from any directory because it does not require a source checkout or
-`package.json`:
+`package.json`. In production, copy the command from the signed-in Agents page
+so it includes a short-lived user-scoped runner token:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://fusion-harness.asthrix.workers.dev/install/windows.ps1'))) --cloud-url 'https://fusion-api.asthrix.workers.dev'"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://fusion-harness.asthrix.workers.dev/install/windows.ps1'))) --cloud-url 'https://fusion-api.asthrix.workers.dev' --token '<runner-token>'"
 ```
 
 For the current source checkout, the repo-local npm script is also available:
@@ -82,11 +84,11 @@ Local development normally uses three processes:
 
 - `npm run api:dev`
 - `npm run dev`
-- `fusion-runner serve --cloud-url http://localhost:8787`
+- `fusion-runner serve --cloud-url http://localhost:8787 --token <runner-token>`
 
 In a deployed setup, the web app and API are hosted, so the user's trusted machine only runs the local runner:
 
-- `fusion-runner serve --cloud-url <deployed-api-url>`
+- `fusion-runner serve --cloud-url <deployed-api-url> --token <runner-token>`
 
 The hosted browser UI cannot directly spawn a local binary or scan the user's PATH. OpenDesign appears native because its Electron package starts a privileged daemon sidecar that performs local agent detection and CLI spawning. Fusion Harness uses the same trust boundary through the Go runner.
 

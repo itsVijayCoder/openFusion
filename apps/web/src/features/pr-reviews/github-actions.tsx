@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RiRefreshLine, RiAddLine } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { apiUrl } from "@/lib/api";
@@ -13,7 +13,7 @@ export function GitHubActions() {
   async function handleSync() {
     setSyncing(true);
     try {
-      await fetch(apiUrl("/api/github/sync"), { method: "POST" });
+      await fetch(apiUrl("/api/github/sync"), { method: "POST", credentials: "include" });
       router.refresh();
     } catch {
       // ignore
@@ -39,6 +39,7 @@ export function RepoLinkButton({ repoId, workspaceId }: { repoId: string; worksp
     try {
       await fetch(apiUrl(`/api/github/repositories/${repoId}/link-workspace`), {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId }),
       });
@@ -57,18 +58,30 @@ export function RepoLinkButton({ repoId, workspaceId }: { repoId: string; worksp
   );
 }
 
-export function UserLinkForm({ userId }: { userId: string }) {
+export function UserLinkForm() {
   const router = useRouter();
+  const [userId, setUserId] = useState<string | undefined>();
   const [githubLogin, setGithubLogin] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    fetch(apiUrl("/api/auth/me"), { credentials: "include" })
+      .then((response) => response.json())
+      .then((body) => {
+        const nextUserId = (body as { user?: { userId?: string } | null }).user?.userId;
+        setUserId(nextUserId);
+      })
+      .catch(() => undefined);
+  }, []);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!githubLogin.trim()) return;
+    if (!githubLogin.trim() || !userId) return;
     setSubmitting(true);
     try {
       await fetch(apiUrl("/api/github/user-links"), {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId, githubLogin: githubLogin.trim() }),
       });
@@ -90,7 +103,7 @@ export function UserLinkForm({ userId }: { userId: string }) {
         placeholder="GitHub login"
         className="h-7 rounded-md border border-border bg-background px-2 text-sm"
       />
-      <Button type="submit" disabled={submitting || !githubLogin.trim()} variant="secondary" size="xs">
+      <Button type="submit" disabled={submitting || !githubLogin.trim() || !userId} variant="secondary" size="xs">
         <RiAddLine aria-hidden className="size-3" />
         Add
       </Button>

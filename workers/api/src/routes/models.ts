@@ -15,7 +15,7 @@ export const localModelAliases = [
 
 export const modelRoutes = new Hono<AppBindings>()
   .get("/", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const models = await listModels(c.env.DB, principal.orgId);
 
     return c.json({
@@ -24,7 +24,7 @@ export const modelRoutes = new Hono<AppBindings>()
     });
   })
   .post("/discover", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const now = new Date().toISOString();
 
     await ensurePrincipal(c.env.DB, {

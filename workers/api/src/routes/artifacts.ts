@@ -6,11 +6,11 @@ import { requireAccessIdentity } from "../services/auth";
 
 export const artifactRoutes = new Hono<AppBindings>()
   .get("/runs/:runId", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     return c.json({ data: await listArtifactsByRun(c.env.DB, principal.orgId, c.req.param("runId")) });
   })
   .post("/", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const payload = artifactCreateRequestSchema.parse(await c.req.json());
 
     const artifact = await createArtifact(c.env.DB, {
@@ -28,7 +28,7 @@ export const artifactRoutes = new Hono<AppBindings>()
     return c.json(artifact, 201);
   })
   .get("/:id", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const artifact = await getArtifact(c.env.DB, principal.orgId, c.req.param("id"));
 
     if (!artifact) {

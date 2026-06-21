@@ -18,9 +18,10 @@ import {
 } from "@remixicon/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/features/theme/theme-provider";
+import { apiUrl } from "@/lib/api";
 
 const navGroups = [
   {
@@ -52,6 +53,10 @@ const navGroups = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+
+  if (pathname === "/login") {
+    return <main className="min-h-screen">{children}</main>;
+  }
 
   if (pathname === "/chat" || pathname.startsWith("/runs/")) {
     return <main className="min-h-screen">{children}</main>;
@@ -94,7 +99,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="border-t border-border p-2">
-            <div className="flex items-center gap-2">
+            <UserMenu />
+            <div className="mt-2 flex items-center gap-2">
               <Link href="/chat" className="flex h-9 flex-1 items-center gap-2 rounded-md bg-sidebar-accent px-3 text-sm font-medium text-sidebar-accent-foreground hover:text-sidebar-accent-foreground">
                 <RiRobot2Line aria-hidden className="size-4" />
                 Back to Chat
@@ -121,6 +127,54 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <main className="flex-1">{children}</main>
         </div>
+      </div>
+    </div>
+  );
+}
+
+type AuthMe = {
+  authenticated: boolean;
+  user: {
+    email: string;
+    name?: string;
+    authMethod: string;
+  } | null;
+};
+
+function UserMenu() {
+  const [auth, setAuth] = useState<AuthMe | undefined>();
+
+  useEffect(() => {
+    fetch(apiUrl("/api/auth/me"), { credentials: "include" })
+      .then((response) => response.json())
+      .then((body) => setAuth(body as AuthMe))
+      .catch(() => setAuth({ authenticated: false, user: null }));
+  }, []);
+
+  async function logout() {
+    await fetch(apiUrl("/api/auth/logout"), {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => undefined);
+    window.location.href = "/login";
+  }
+
+  if (!auth?.authenticated || !auth.user) {
+    return (
+      <Link href="/login" className="flex h-10 items-center justify-center rounded-md border border-border text-xs font-semibold text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+        Sign in
+      </Link>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-sidebar-accent/60 p-2">
+      <p className="truncate text-xs font-semibold text-sidebar-foreground">{auth.user.name ?? auth.user.email}</p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <p className="truncate text-[11px] text-muted-foreground">{auth.user.authMethod}</p>
+        <button type="button" className="text-[11px] font-semibold text-muted-foreground hover:text-sidebar-foreground" onClick={logout}>
+          Logout
+        </button>
       </div>
     </div>
   );

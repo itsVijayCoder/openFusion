@@ -100,7 +100,7 @@ export function RunChat({ run }: RunChatProps) {
     let isActive = true;
 
     async function loadSnapshot() {
-      const response = await fetch(apiUrl(`/api/fusion/runs/${run.id}/events`), { cache: "no-store" });
+      const response = await fetch(apiUrl(`/api/fusion/runs/${run.id}/events`), { cache: "no-store", credentials: "include" });
       if (!response.ok) return;
       const body = (await response.json().catch(() => ({}))) as { data?: RunEvent[] };
       if (isActive && Array.isArray(body.data)) {
@@ -146,10 +146,7 @@ export function RunChat({ run }: RunChatProps) {
       try {
         const response = await fetch(apiUrl("/api/fusion/runs?limit=30"), {
           cache: "no-store",
-          headers: {
-            "x-fusion-dev-email": "developer@fusion.local",
-            "x-fusion-dev-name": "Fusion Developer",
-          },
+          credentials: "include",
         });
         if (!response.ok || cancelled) return;
         const body = (await response.json().catch(() => ({}))) as { data?: Array<{ id: string; title?: string; status: string; createdAt: string }> };

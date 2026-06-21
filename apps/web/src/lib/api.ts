@@ -29,6 +29,7 @@ export async function apiGet<T>(path: string, fallback: T): Promise<ApiResult<T>
   try {
     const response = await fetch(apiUrl(path), {
       cache: "no-store",
+      credentials: "include",
       headers: devHeaders(),
     });
 
@@ -49,6 +50,7 @@ export async function apiGet<T>(path: string, fallback: T): Promise<ApiResult<T>
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(apiUrl(path), {
     method: "POST",
+    credentials: "include",
     headers: {
       "content-type": "application/json",
       ...devHeaders(),
@@ -67,6 +69,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 export async function apiDelete<T>(path: string): Promise<T> {
   const response = await fetch(apiUrl(path), {
     method: "DELETE",
+    credentials: "include",
     headers: devHeaders(),
   });
 
@@ -78,7 +81,14 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function devHeaders() {
+function devHeaders(): Record<string, string> {
+  if (typeof window !== "undefined" && !isLocalHost(window.location.hostname)) {
+    return {};
+  }
+  if (typeof window === "undefined" && process.env.NODE_ENV === "production") {
+    return {};
+  }
+
   return {
     "x-fusion-dev-email": "developer@fusion.local",
     "x-fusion-dev-name": "Fusion Developer",

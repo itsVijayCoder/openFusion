@@ -3,7 +3,7 @@
 import { RiClipboardLine, RiRefreshLine, RiTerminalBoxLine } from "@remixicon/react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { apiUrl } from "@/lib/api";
+import { apiPost, apiUrl } from "@/lib/api";
 
 type RunnerBootstrapProps = {
   hasRunner: boolean;
@@ -13,6 +13,7 @@ type CommandKind = "macos" | "windows" | "manual" | "dev";
 
 export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
   const [copied, setCopied] = useState<CommandKind | undefined>();
+  const [copyError, setCopyError] = useState<string | undefined>();
   const cloudUrl = useMemo(() => apiUrl("").replace(/\/$/, ""), []);
   const appUrl = useMemo(() => (typeof window === "undefined" ? "https://fusion-harness.asthrix.workers.dev" : window.location.origin), []);
   const preferredInstall = useMemo<"macos" | "windows">(() => {
@@ -20,23 +21,41 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
     return /windows|win32|win64/i.test(`${navigator.userAgent} ${navigator.platform}`) ? "windows" : "macos";
   }, []);
   const macosInstallerUrl = `${appUrl}/install/macos.sh`;
-  const macosInstallCommand = `curl -fsSL '${macosInstallerUrl}' | bash -s -- --cloud-url '${cloudUrl}' --binary-base-url '${appUrl}/downloads'`;
+  const macosInstallCommand = installCommand("macos", "<generated-runner-token>");
   const windowsInstallerUrl = `${appUrl}/install/windows.ps1`;
-  const windowsInstallCommand = `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm '${windowsInstallerUrl}'))) --cloud-url '${cloudUrl}'"`;
-  const manualCommand = `fusion-runner serve --cloud-url ${cloudUrl}`;
-  const devCommand = `cd apps/runner-go && go run ./cmd/fusion-runner serve --cloud-url ${cloudUrl}`;
+  const windowsInstallCommand = installCommand("windows", "<generated-runner-token>");
+  const manualCommand = manualCommandFor("<generated-runner-token>");
+  const devCommand = devCommandFor("<generated-runner-token>");
 
   async function copyCommand(kind: CommandKind) {
-    const command = kind === "macos"
-      ? macosInstallCommand
-      : kind === "windows"
-        ? windowsInstallCommand
+    try {
+      setCopyError(undefined);
+      const command = kind === "macos" || kind === "windows"
+        ? installCommand(kind, await createRunnerToken())
         : kind === "manual"
-          ? manualCommand
-          : devCommand;
-    await navigator.clipboard.writeText(command);
-    setCopied(kind);
-    window.setTimeout(() => setCopied(undefined), 1800);
+          ? manualCommandFor(await createRunnerToken())
+          : devCommandFor(await createRunnerToken());
+      await navigator.clipboard.writeText(command);
+      setCopied(kind);
+      window.setTimeout(() => setCopied(undefined), 1800);
+    } catch (error) {
+      setCopyError(error instanceof Error ? error.message : "Unable to create runner token");
+    }
+  }
+
+  function installCommand(kind: "macos" | "windows", token: string) {
+    if (kind === "macos") {
+      return `curl -fsSL '${macosInstallerUrl}' | bash -s -- --cloud-url '${cloudUrl}' --binary-base-url '${appUrl}/downloads' --token '${token}'`;
+    }
+    return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm '${windowsInstallerUrl}'))) --cloud-url '${cloudUrl}' --token '${token}'"`;
+  }
+
+  function manualCommandFor(token: string) {
+    return `fusion-runner serve --cloud-url '${cloudUrl}' --token '${token}'`;
+  }
+
+  function devCommandFor(token: string) {
+    return `cd apps/runner-go && go run ./cmd/fusion-runner serve --cloud-url '${cloudUrl}' --token '${token}'`;
   }
 
   function refresh() {
@@ -59,8 +78,9 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
             </div>
           </div>
           <p className="mt-4 text-sm leading-6 text-muted-foreground">
-            The one-time installer builds the runner, writes its cloud URL, and registers a background login task so the runner starts automatically.
+            The copy action creates a scoped runner token for your user, writes the cloud URL, and registers a background login task so the runner starts automatically.
           </p>
+          {copyError ? <p className="mt-3 text-sm font-medium text-destructive">{copyError}</p> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" className="gap-2 rounded-md" onClick={() => copyCommand(preferredInstall)}>
@@ -86,6 +106,13 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
       </div>
     </section>
   );
+}
+
+async function createRunnerToken() {
+  const response = await apiPost<{ token: string }>("/api/auth/runner-token", {
+    name: `Runner install ${new Date().toISOString()}`,
+  });
+  return response.token;
 }
 
 function CommandBlock({ label, command, onCopy, copied }: { label: string; command: string; onCopy: () => void; copied: boolean }) {

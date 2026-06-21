@@ -24,7 +24,7 @@ type OpenAIChatCompletionRequest = {
 
 export const openAiRoutes = new Hono<AppBindings>()
   .get("/models", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const discoveredModels = await listModels(c.env.DB, principal.orgId);
 
     return c.json({
@@ -40,7 +40,7 @@ export const openAiRoutes = new Hono<AppBindings>()
     });
   })
   .post("/chat/completions", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const body = (await c.req.json().catch(() => ({}))) as OpenAIChatCompletionRequest;
     const fusion = body.fusion ?? {};
     const payload = fusionRunRequestSchema.parse({

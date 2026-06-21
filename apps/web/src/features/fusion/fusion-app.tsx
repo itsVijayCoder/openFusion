@@ -41,10 +41,7 @@ export function FusionApp({ models }: FusionAppProps) {
     async function load() {
       try {
         const res = await fetch(apiUrl("/api/fusion/runs?limit=30"), {
-          headers: {
-            "x-fusion-dev-email": "developer@fusion.local",
-            "x-fusion-dev-name": "Fusion Developer",
-          },
+          credentials: "include",
         });
         if (!res.ok || cancelled) return;
         const body = (await res.json()) as { data?: Array<{ id: string; title?: string; status: string; createdAt: string }> };

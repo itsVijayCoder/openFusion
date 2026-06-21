@@ -4,7 +4,7 @@ import type { AppBindings } from "../env";
 import { requireAccessIdentity } from "../services/auth";
 
 export const workspaceRoutes = new Hono<AppBindings>().get("/", async (c) => {
-  const principal = requireAccessIdentity(c.req.raw.headers);
+  const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
   const now = new Date().toISOString();
 
   await ensurePrincipal(c.env.DB, {

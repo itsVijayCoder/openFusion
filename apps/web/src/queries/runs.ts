@@ -8,10 +8,7 @@ export function useRun(runId: string) {
     queryKey: ["run", runId],
     queryFn: async () => {
       const res = await fetch(apiUrl(`/api/fusion/runs/${runId}`), {
-        headers: {
-          "x-fusion-dev-email": "developer@fusion.local",
-          "x-fusion-dev-name": "Fusion Developer",
-        },
+        credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch run");
       return res.json();

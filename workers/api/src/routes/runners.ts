@@ -29,18 +29,18 @@ import {
 import { Hono } from "hono";
 import type { AppBindings, Env } from "../env";
 import { buildArtifactKey } from "../services/artifact-store";
-import { requireAccessIdentity } from "../services/auth";
+import { requireAccessIdentity, requireRunnerAccessIdentity } from "../services/auth";
 import { notifyRunnerSessionObject } from "../services/runner-session";
 import { advanceFusionRunAfterJob, notifyFusionRunObject } from "../services/runs";
 import { completePrReviewJob } from "../services/pr-review-execution";
 
 export const runnerRoutes = new Hono<AppBindings>()
   .get("/", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     return c.json({ data: await listRunners(c.env.DB, principal.orgId) });
   })
   .post("/register", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const payload = runnerRegistrationRequestSchema.parse(await c.req.json());
     const now = new Date().toISOString();
     const runnerId = payload.runnerId ?? formatEntityId("runner", crypto.randomUUID());
@@ -80,7 +80,7 @@ export const runnerRoutes = new Hono<AppBindings>()
     return c.json(runner, 202);
   })
   .post("/:id/heartbeat", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const runner = await heartbeatRunner(c.env.DB, principal.orgId, c.req.param("id"), new Date().toISOString());
 
     if (!runner) {
@@ -90,7 +90,7 @@ export const runnerRoutes = new Hono<AppBindings>()
     return c.json(runner);
   })
   .post("/:id/jobs/claim", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const runnerId = c.req.param("id");
     const runner = await getRunner(c.env.DB, principal.orgId, runnerId);
 
@@ -142,7 +142,7 @@ export const runnerRoutes = new Hono<AppBindings>()
     return c.json({ job: { ...leasedJob, payload: claimBody.job.payload } satisfies ClaimedRunnerJob });
   })
   .get("/:id/jobs/:jobId", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const runnerId = c.req.param("id");
     const jobId = c.req.param("jobId");
     const job = await getRunnerJob(c.env.DB, principal.orgId, runnerId, jobId);
@@ -159,7 +159,7 @@ export const runnerRoutes = new Hono<AppBindings>()
     return c.json({ job, status, runStatus: run.status });
   })
   .post("/:id/jobs/:jobId/events", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const runnerId = c.req.param("id");
     const jobId = c.req.param("jobId");
     const event = runnerEventSchema.parse(await c.req.json());
@@ -175,7 +175,7 @@ export const runnerRoutes = new Hono<AppBindings>()
     return c.json({ status: "accepted", event: persisted }, 202);
   })
   .post("/:id/jobs/:jobId/complete", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const runnerId = c.req.param("id");
     const jobId = c.req.param("jobId");
     const body = runnerJobCompletionSchema.parse(await c.req.json().catch(() => ({ status: "completed" })));
@@ -189,7 +189,7 @@ export const runnerRoutes = new Hono<AppBindings>()
     return c.json({ job: result.job, event: result.event }, 202);
   })
   .post("/:id/jobs/:jobId/fail", async (c) => {
-    const principal = requireAccessIdentity(c.req.raw.headers);
+    const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const runnerId = c.req.param("id");
     const jobId = c.req.param("jobId");
     const body = runnerJobCompletionSchema.parse(await c.req.json().catch(() => ({ status: "failed" })));
