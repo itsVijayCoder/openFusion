@@ -25,6 +25,7 @@ import (
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/fusion"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/localagents"
 	"github.com/asthrix/fusion-harness/apps/runner-go/internal/localui"
+	"github.com/asthrix/fusion-harness/apps/runner-go/internal/prreview"
 )
 
 const version = "0.1.0"
@@ -320,6 +321,10 @@ func executeCloudJob(ctx context.Context, client cloud.Client, cfg config.Config
 		return err
 	}
 
+	if payload.Kind == "pr_review" {
+		return executePrReviewJob(ctx, client, cfg, payload, workspacePath, allowedRoots, runner)
+	}
+
 	input := adapters.RunInput{
 		RunID:             payload.RunID,
 		JobID:             payload.JobID,
@@ -511,6 +516,139 @@ func modelArg(model string) string {
 		return ""
 	}
 	return model
+}
+
+func executePrReviewJob(
+	ctx context.Context,
+	client cloud.Client,
+	cfg config.Config,
+	payload cloud.JobPayload,
+	workspacePath string,
+	allowedRoots []string,
+	runner adapters.Adapter,
+) error {
+	meta := payload.Metadata
+	if meta == nil {
+		meta = map[string]any{}
+	}
+
+	repoFullName, _ := meta["repoFullName"].(string)
+	pullNumber := toInt(meta["pullNumber"])
+	baseRef, _ := meta["baseRef"].(string)
+	baseSha, _ := meta["baseSha"].(string)
+	headRef, _ := meta["headRef"].(string)
+	headSha, _ := meta["headSha"].(string)
+	headRepoFullName, _ := meta["headRepoFullName"].(string)
+	reviewDepth, _ := meta["reviewDepth"].(string)
+	maxComments := toInt(meta["maxComments"])
+	ignoredPaths := toStringSlice(meta["ignoredPaths"])
+
+	req := prreview.Request{
+		WorkspacePath:    workspacePath,
+		RepoFullName:     repoFullName,
+		PullNumber:       pullNumber,
+		BaseRef:          baseRef,
+		BaseSha:          baseSha,
+		HeadRef:          headRef,
+		HeadSha:          headSha,
+		HeadRepoFullName: headRepoFullName,
+		ReviewDepth:      reviewDepth,
+		MaxComments:      maxComments,
+		IgnoredPaths:     ignoredPaths,
+		AllowedRoots:     allowedRoots,
+		ToolDirs:         cfg.ToolDirs,
+		Env:              nil,
+		TimeoutMs:        payload.TimeoutMs,
+	}
+
+	runAgent := func(agentCtx context.Context, prompt string) (string, error) {
+		input := adapters.RunInput{
+			RunID:             payload.RunID,
+			JobID:             payload.JobID,
+			WorkspacePath:     workspacePath,
+			Prompt:            prompt,
+			Model:             modelArg(payload.Model),
+			PermissionProfile: payload.PermissionProfile,
+			TimeoutMs:         payload.TimeoutMs,
+		}
+		result, err := runner.Run(agentCtx, input, nil)
+		if err != nil {
+			return "", err
+		}
+		if result == nil {
+			return "", fmt.Errorf("agent returned nil result")
+		}
+		return result.OutputText, nil
+	}
+
+	result, err := prreview.Execute(ctx, req, runAgent)
+	if err != nil {
+		failErr := client.FailJob(ctx, cfg.RunnerID, payload.JobID, cloud.JobCompletion{
+			Status: "failed",
+			Error:  err.Error(),
+		})
+		if failErr != nil {
+			return fmt.Errorf("%w; additionally failed to report job failure: %v", err, failErr)
+		}
+		return err
+	}
+
+	outputBytes, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("marshal review result: %w", err)
+	}
+	outputText := string(outputBytes)
+
+	if err := client.PostJobEvent(ctx, cfg.RunnerID, payload.JobID, cloud.RunnerEvent{
+		Type:      "final.delta",
+		RunID:     payload.RunID,
+		JobID:     payload.JobID,
+		RunnerID:  cfg.RunnerID,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Data: map[string]any{
+			"text":      outputText,
+			"modelId":   payload.ModelID,
+			"adapter":   payload.Adapter,
+			"fullChunk": true,
+		},
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to post output event for job %s: %v\n", payload.JobID, err)
+	}
+
+	return client.CompleteJob(ctx, cfg.RunnerID, payload.JobID, cloud.JobCompletion{
+		Status:     "completed",
+		OutputText: outputText,
+	})
+}
+
+func toInt(value any) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func toStringSlice(value any) []string {
+	arr, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 func runTest(ctx context.Context, args []string) error {

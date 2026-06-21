@@ -5,18 +5,24 @@ import {
   getPrReviewDetail,
   getPrReviewQueue,
   listGitHubPullRequests,
+  listPrReviewComments,
+  listPrReviewCommentsByRun,
   updateGitHubPullRequestStatus,
+  updatePrReviewComment,
 } from "@fusion-harness/db";
 import {
   formatEntityId,
   gitHubPrStatusSchema,
+  prReviewCommentUpdateSchema,
   prReviewQueueQuerySchema,
+  prReviewStartSchema,
   type PrReviewSide,
 } from "@fusion-harness/shared";
 import { Hono } from "hono";
 import type { AppBindings } from "../env";
 import { requireAccessIdentity } from "../services/auth";
 import { fetchAndStorePrDiff, fetchFileContent, getStoredPrDiff } from "../services/github-diff";
+import { PrReviewError, startPrReview } from "../services/pr-review-execution";
 import { syncPullRequestsForRepository } from "../services/github-sync";
 
 export const prReviewRoutes = new Hono<AppBindings>()
@@ -119,7 +125,13 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(updated);
   })
   .post("/:prId/start", async (c) => {
-    return c.json({ error: "PR review execution is not available in this phase" }, 501);
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const body = prReviewStartSchema.parse(await c.req.json().catch(() => ({})));
+    const reviewRun = await startPrReview(c.env, principal, c.req.param("prId"), {
+      reviewMode: body.reviewMode,
+      runnerId: body.runnerId,
+    });
+    return c.json(reviewRun, 202);
   })
   .get("/:prId/diff", async (c) => {
     const principal = requireAccessIdentity(c.req.raw.headers);
@@ -150,10 +162,69 @@ export const prReviewRoutes = new Hono<AppBindings>()
     return c.json(content);
   })
   .get("/:prId/comments", async (c) => {
-    return c.json({ error: "Comment management is not available in this phase" }, 501);
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    return c.json({ data: await listPrReviewComments(c.env.DB, principal.orgId, c.req.param("prId")) });
   })
   .patch("/:prId/comments/:commentId", async (c) => {
-    return c.json({ error: "Comment editing is not available in this phase" }, 501);
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const commentId = c.req.param("commentId");
+    const body = prReviewCommentUpdateSchema.parse(await c.req.json());
+    const now = new Date().toISOString();
+
+    const comment = await updatePrReviewComment(c.env.DB, {
+      orgId: principal.orgId,
+      commentId,
+      body: body.body,
+      suggestedChange: body.suggestedChange ?? undefined,
+      severity: body.severity,
+      category: body.category,
+      startLine: body.startLine ?? undefined,
+      line: body.line ?? undefined,
+      side: body.side,
+      status: body.status,
+      editedByUserId: principal.userId,
+      now,
+    });
+
+    if (!comment) {
+      return c.json({ error: "Comment not found" }, 404);
+    }
+
+    await createAuditEvent(c.env.DB, {
+      id: formatEntityId("audit", crypto.randomUUID()),
+      orgId: principal.orgId,
+      userId: principal.userId,
+      eventType: "pr_review.comment_updated",
+      metadata: { commentId, prId: c.req.param("prId"), changes: body },
+      createdAt: now,
+    });
+
+    return c.json(comment);
+  })
+  .post("/:prId/comments/:commentId/resolve", async (c) => {
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    const commentId = c.req.param("commentId");
+    const now = new Date().toISOString();
+
+    const comment = await updatePrReviewComment(c.env.DB, {
+      orgId: principal.orgId,
+      commentId,
+      status: "rejected",
+      editedByUserId: principal.userId,
+      now,
+    });
+
+    if (!comment) {
+      return c.json({ error: "Comment not found" }, 404);
+    }
+
+    return c.json(comment);
+  })
+  .get("/:prId/runs/:runId/comments", async (c) => {
+    const principal = requireAccessIdentity(c.req.raw.headers);
+    return c.json({
+      data: await listPrReviewCommentsByRun(c.env.DB, principal.orgId, c.req.param("runId")),
+    });
   })
   .post("/:prId/publish", async (c) => {
     return c.json({ error: "Publishing is not available in this phase" }, 501);
@@ -163,3 +234,10 @@ export const prReviewRoutes = new Hono<AppBindings>()
       data: gitHubPrStatusSchema.options,
     });
   });
+
+prReviewRoutes.onError((error, c) => {
+  if (error instanceof PrReviewError) {
+    return c.json({ error: error.message }, error.statusCode);
+  }
+  throw error;
+});
