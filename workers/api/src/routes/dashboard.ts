@@ -16,5 +16,17 @@ export const dashboardRoutes = new Hono<AppBindings>().get("/", async (c) => {
     now,
   });
 
-  return c.json(await getDashboardSnapshot(c.env.DB, principal.orgId));
+  const cacheKey = `dashboard:${principal.orgId}`;
+  if (c.env.KV) {
+    const cached = await c.env.KV.get(cacheKey);
+    if (cached) {
+      return c.json({ ...JSON.parse(cached), cached: true });
+    }
+  }
+
+  const snapshot = await getDashboardSnapshot(c.env.DB, principal.orgId);
+  if (c.env.KV) {
+    await c.env.KV.put(cacheKey, JSON.stringify(snapshot), { expirationTtl: 30 });
+  }
+  return c.json(snapshot);
 });

@@ -328,22 +328,16 @@ type AuditEventRow = {
 export async function ensurePrincipal(db: D1DatabaseLike, input: PrincipalInput) {
   await db
     .prepare(
-      `INSERT INTO orgs (id, name, created_at, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`,
+      `INSERT OR IGNORE INTO orgs (id, name, created_at, updated_at)
+       VALUES (?, ?, ?, ?)`,
     )
     .bind(input.orgId, input.orgName, input.now, input.now)
     .run();
 
   await db
     .prepare(
-      `INSERT INTO users (id, org_id, email, name, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         email = excluded.email,
-         name = excluded.name,
-         role = excluded.role,
-         updated_at = excluded.updated_at`,
+      `INSERT OR IGNORE INTO users (id, org_id, email, name, role, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(input.userId, input.orgId, input.email, input.name ?? null, input.role ?? "developer", input.now, input.now)
     .run();
@@ -745,6 +739,22 @@ export async function listRunEvents(
     .all<RunEventRow>();
 
   return results.map(mapRunEvent);
+}
+
+export async function getLatestRunEventByJob(
+  db: D1DatabaseLike,
+  orgId: string,
+  runId: string,
+  jobId: string,
+  type?: RunEvent["type"],
+): Promise<RunEvent | null> {
+  const query = type
+    ? `SELECT * FROM run_events WHERE org_id = ? AND run_id = ? AND job_id = ? AND type = ? ORDER BY seq DESC LIMIT 1`
+    : `SELECT * FROM run_events WHERE org_id = ? AND run_id = ? AND job_id = ? ORDER BY seq DESC LIMIT 1`;
+  const row = type
+    ? await db.prepare(query).bind(orgId, runId, jobId, type).first<RunEventRow>()
+    : await db.prepare(query).bind(orgId, runId, jobId).first<RunEventRow>();
+  return row ? mapRunEvent(row) : null;
 }
 
 export async function listModels(db: D1DatabaseLike, orgId: string): Promise<ModelRef[]> {

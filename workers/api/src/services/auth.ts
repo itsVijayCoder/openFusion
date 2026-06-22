@@ -73,7 +73,7 @@ export async function requireRunnerAccessIdentity(db: D1Database, env: Env, head
 }
 
 export async function getOptionalAccessIdentity(db: D1Database, env: Env, headers: Headers): Promise<AccessIdentity | null> {
-  const sessionIdentity = await identityFromSession(db, headers);
+  const sessionIdentity = await identityFromSession(db, env, headers);
   if (sessionIdentity) return sessionIdentity;
 
   const tokenIdentity = await identityFromBearerToken(db, headers);
@@ -258,7 +258,7 @@ export function expiredSessionCookie(env: Env) {
   return serializeSessionCookie(env, "", 0);
 }
 
-async function identityFromSession(db: D1Database, headers: Headers): Promise<AccessIdentity | null> {
+async function identityFromSession(db: D1Database, env: Env, headers: Headers): Promise<AccessIdentity | null> {
   const token = readCookie(headers, sessionCookieName);
   if (!token) return null;
 
@@ -271,6 +271,7 @@ async function identityFromSession(db: D1Database, headers: Headers): Promise<Ac
          auth_sessions.user_id,
          auth_sessions.expires_at,
          auth_sessions.revoked_at,
+         auth_sessions.last_seen_at,
          users.email,
          users.name
        FROM auth_sessions
@@ -280,14 +281,17 @@ async function identityFromSession(db: D1Database, headers: Headers): Promise<Ac
          AND auth_sessions.expires_at > ?`,
     )
     .bind(await sha256Hex(token), now)
-    .first<SessionRow>();
+    .first<SessionRow & { last_seen_at: string | null }>();
 
   if (!row) return null;
 
-  await db
-    .prepare("UPDATE auth_sessions SET last_seen_at = ?, updated_at = ? WHERE id = ?")
-    .bind(now, now, row.id)
-    .run();
+  const shouldUpdateLastSeen = await shouldUpdateLastSeenAt(env, row.id, row.last_seen_at ?? undefined);
+  if (shouldUpdateLastSeen) {
+    await db
+      .prepare("UPDATE auth_sessions SET last_seen_at = ?, updated_at = ? WHERE id = ?")
+      .bind(now, now, row.id)
+      .run();
+  }
 
   return {
     orgId: row.org_id,
@@ -297,6 +301,22 @@ async function identityFromSession(db: D1Database, headers: Headers): Promise<Ac
     name: row.name ?? undefined,
     authMethod: "session",
   };
+}
+
+async function shouldUpdateLastSeenAt(env: Env, sessionId: string, lastSeenAt: string | undefined): Promise<boolean> {
+  if (!env.KV) return true;
+
+  const cacheKey = `session:lastseen:${sessionId}`;
+  const cached = await env.KV.get(cacheKey);
+  if (cached) return false;
+
+  if (lastSeenAt) {
+    const elapsed = Date.now() - Date.parse(lastSeenAt);
+    if (Number.isFinite(elapsed) && elapsed < 5 * 60 * 1000) return false;
+  }
+
+  await env.KV.put(cacheKey, "1", { expirationTtl: 300 });
+  return true;
 }
 
 async function identityFromBearerToken(db: D1Database, headers: Headers): Promise<AccessIdentity | null> {

@@ -39,7 +39,7 @@ export function OutputDrawer({ title, subtitle, status, content, error, onClose 
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-lg flex-col border-l border-border bg-secondary">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
           <div className="min-w-0">

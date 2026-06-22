@@ -1,3 +1,4 @@
+export * from "./fusion/analysis";
 export * from "./fusion/final-writer";
 export * from "./fusion/judge";
 export * from "./fusion/orchestrator";

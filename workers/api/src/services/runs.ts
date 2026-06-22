@@ -10,6 +10,7 @@ import {
   ensureModel,
   ensurePrincipal,
   getFusionRun,
+  getLatestRunEventByJob,
   listRunEvents,
   listArtifactsByRun,
   listRunnerJobsByRun,
@@ -295,6 +296,116 @@ export async function continueRun(
   });
 }
 
+export async function retryRun(
+  env: Env,
+  principal: AccessIdentity,
+  runId: string,
+): Promise<CreateRunResult> {
+  const originalRun = await getFusionRun(env.DB, principal.orgId, runId);
+  if (!originalRun) {
+    throw new RunCreationError("Run not found", 404);
+  }
+
+  const originalRequest = await loadRunRequest(env, originalRun.promptObjectKey);
+  if (!originalRequest) {
+    throw new RunCreationError("Original run prompt was not found", 422);
+  }
+
+  const conversationId = originalRun.conversationId ?? originalRun.id;
+
+  return createRunFromRequest(env, principal, originalRequest, {
+    parentRunId: runId,
+    conversationId,
+  });
+}
+
+export async function retryPanelJob(
+  env: Env,
+  principal: AccessIdentity,
+  runId: string,
+  jobId: string,
+): Promise<void> {
+  const run = await requireRun(env, principal.orgId, runId);
+  if (isTerminalRunStatus(run.status)) {
+    throw new RunLifecycleError("Cannot retry a panel job on a completed run. Retry the entire run instead.");
+  }
+
+  const jobs = await listRunnerJobsByRun(env.DB, principal.orgId, runId);
+  const job = jobs.find((j) => j.id === jobId);
+  if (!job) {
+    throw new RunLifecycleError("Panel job not found", 404);
+  }
+  if (job.kind !== "panel") {
+    throw new RunLifecycleError("Only panel jobs can be retried individually.");
+  }
+  if (job.status === "completed" || job.status === "running" || job.status === "leased") {
+    throw new RunLifecycleError("Only failed or cancelled panel jobs can be retried.");
+  }
+
+  const now = new Date().toISOString();
+  await updateRunnerJobStatus(env.DB, {
+    orgId: principal.orgId,
+    runnerId: job.runnerId,
+    jobId: job.id,
+    status: "queued",
+    error: undefined,
+  });
+
+  const request = await loadRunRequest(env, run.promptObjectKey);
+  if (!request) {
+    throw new RunCreationError("Run prompt was not found", 422);
+  }
+
+  const userPrompt = renderMessages(request.messages);
+  const plan = run.executionPlan;
+  if (!plan) {
+    throw new RunLifecycleError("Run execution plan is missing.");
+  }
+  const step = plan.steps.find((s) => s.jobId === jobId);
+  if (!step) {
+    throw new RunLifecycleError("Execution step not found for this job.");
+  }
+
+  const prompt = buildPanelPrompt(userPrompt, step.role ?? "panel");
+  const payload: RunnerJobPayload = {
+    jobId: step.jobId,
+    runId: step.id,
+    kind: step.kind,
+    modelId: step.modelId,
+    adapter: step.adapter,
+    model: step.model,
+    role: step.role,
+    prompt,
+    promptObjectKey: run.promptObjectKey,
+    workspaceId: request.workspaceId,
+    permissionProfile: request.permissionProfile,
+    timeoutMs: request.timeoutMs,
+    attempt: job.attempt + 1,
+    metadata: { mode: request.mode, preset: request.preset, retry: true },
+  };
+
+  await notifyRunnerSessionObject(env, job.runnerId, "/dispatch", {
+    ...job,
+    payload,
+  });
+
+  await appendRunEvent(env, principal.orgId, {
+    type: "panel.job.queued",
+    runId,
+    jobId: step.jobId,
+    runnerId: step.runnerId,
+    timestamp: now,
+    data: {
+      kind: step.kind,
+      modelId: step.modelId,
+      adapter: step.adapter,
+      model: step.model,
+      role: step.role,
+      retry: true,
+    },
+  });
+}
+
 export async function loadRunMessages(env: Env, promptObjectKey: string | undefined): Promise<ChatMessage[]> {
   const request = await loadRunRequest(env, promptObjectKey);
   return request?.messages ?? [];
@@ -338,7 +449,7 @@ export async function advanceFusionRunAfterJob(env: Env, orgId: string, complete
   if (!run?.executionPlan) return;
   if (run.status === "paused" || isTerminalRunStatus(run.status)) return;
 
-  if (completedJob.kind === "direct" || completedJob.kind === "judge") {
+  if (completedJob.kind === "direct") {
     const status = completedJob.status === "completed" ? "completed" : "failed";
     await updateFusionRunStatus(env.DB, orgId, completedJob.runId, status, now, completedJob.error);
     await appendRunEvent(env, orgId, {
@@ -349,6 +460,42 @@ export async function advanceFusionRunAfterJob(env: Env, orgId: string, complete
       timestamp: now,
       data: {
         status,
+        outputObjectKey: completedJob.outputObjectKey,
+        error: completedJob.error,
+      },
+    });
+    return;
+  }
+
+  if (completedJob.kind === "judge") {
+    if (completedJob.status === "completed") {
+      await updateFusionRunStatus(env.DB, orgId, completedJob.runId, "completed", now);
+      await appendRunEvent(env, orgId, {
+        type: "run.completed",
+        runId: completedJob.runId,
+        jobId: completedJob.id,
+        runnerId: completedJob.runnerId,
+        timestamp: now,
+        data: {
+          status: "completed",
+          outputObjectKey: completedJob.outputObjectKey,
+        },
+      });
+      return;
+    }
+
+    const fallbackResult = await runJudgeFallback(env, orgId, run, completedJob, now);
+    if (fallbackResult) return;
+
+    await updateFusionRunStatus(env.DB, orgId, completedJob.runId, "failed", now, completedJob.error);
+    await appendRunEvent(env, orgId, {
+      type: "run.failed",
+      runId: completedJob.runId,
+      jobId: completedJob.id,
+      runnerId: completedJob.runnerId,
+      timestamp: now,
+      data: {
+        status: "failed",
         outputObjectKey: completedJob.outputObjectKey,
         error: completedJob.error,
       },
@@ -823,15 +970,14 @@ async function successfulPanelOutputs(env: Env, orgId: string, runId: string, pl
 }
 
 async function outputForJob(env: Env, orgId: string, runId: string, job: RunnerJob) {
-  const events = await listRunEvents(env.DB, orgId, runId, { limit: 1000 });
-  const completionEvent = [...events].reverse().find((event) => event.jobId === job.id && typeof event.data.outputText === "string");
-  if (typeof completionEvent?.data.outputText === "string") {
-    return extractReadableOutput(completionEvent.data.outputText);
-  }
-
   if (job.outputObjectKey && env.ARTIFACTS) {
     const object = await env.ARTIFACTS.get(job.outputObjectKey);
     if (object) return extractReadableOutput(await object.text());
+  }
+
+  const completionEvent = await getLatestRunEventByJob(env.DB, orgId, runId, job.id, "panel.job.completed");
+  if (completionEvent && typeof completionEvent.data.outputText === "string") {
+    return extractReadableOutput(completionEvent.data.outputText);
   }
 
   return "";
@@ -865,6 +1011,95 @@ async function failRun(env: Env, orgId: string, job: RunnerJob, now: string, err
     timestamp: now,
     data: { error },
   });
+}
+
+async function runJudgeFallback(
+  env: Env,
+  orgId: string,
+  run: NonNullable<Awaited<ReturnType<typeof getFusionRun>>>,
+  failedJudgeJob: RunnerJob,
+  now: string,
+): Promise<boolean> {
+  if (!run.executionPlan) return false;
+
+  const jobs = await listRunnerJobsByRun(env.DB, orgId, run.id);
+  const panelOutputs = await successfulPanelOutputs(env, orgId, run.id, run.executionPlan, jobs);
+  if (panelOutputs.length === 0) return false;
+
+  const best = selectBestPanelOutput(panelOutputs);
+
+  await appendRunEvent(env, orgId, {
+    type: "judge.fallback",
+    runId: run.id,
+    jobId: failedJudgeJob.id,
+    runnerId: failedJudgeJob.runnerId,
+    timestamp: now,
+    data: {
+      reason: failedJudgeJob.error ?? "Judge model unavailable",
+      fallbackModel: best.model,
+    },
+  });
+
+  await appendRunEvent(env, orgId, {
+    type: "final.started",
+    runId: run.id,
+    timestamp: now,
+    data: { source: "judge_fallback" },
+  });
+
+  await appendRunEvent(env, orgId, {
+    type: "final.delta",
+    runId: run.id,
+    timestamp: now,
+    data: { text: best.output },
+  });
+
+  await appendRunEvent(env, orgId, {
+    type: "final.completed",
+    runId: run.id,
+    timestamp: now,
+    data: {
+      text: best.output,
+      source: "judge_fallback",
+      fallbackModel: best.model,
+    },
+  });
+
+  await updateFusionRunStatus(env.DB, orgId, run.id, "completed", now);
+  await appendRunEvent(env, orgId, {
+    type: "run.completed",
+    runId: run.id,
+    jobId: failedJudgeJob.id,
+    runnerId: failedJudgeJob.runnerId,
+    timestamp: now,
+    data: {
+      status: "completed",
+      judgeFallback: true,
+      fallbackModel: best.model,
+    },
+  });
+
+  return true;
+}
+
+function selectBestPanelOutput(outputs: Array<{ model: string; output: string }>): { model: string; output: string } {
+  if (outputs.length === 1) return outputs[0];
+
+  return outputs.reduce((best, current) => {
+    const bestScore = scorePanelOutput(best.output);
+    const currentScore = scorePanelOutput(current.output);
+    return currentScore > bestScore ? current : best;
+  });
+}
+
+function scorePanelOutput(output: string): number {
+  let score = output.length;
+  if (/```/.test(output)) score += 500;
+  if (/risk|warning|caution/i.test(output)) score += 200;
+  if (/test|spec/i.test(output)) score += 200;
+  const codeBlockCount = (output.match(/```/g) ?? []).length / 2;
+  score += codeBlockCount * 100;
+  return score;
 }
 
 function plannedJobs(plan: FusionExecutionPlan, kind: RunnerJobKind) {

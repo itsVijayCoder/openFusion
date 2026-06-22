@@ -1,4 +1,4 @@
-import { createAuditEvent, getFusionRunDetail, listFusionRuns, listRunEvents, updateFusionRunTitle } from "@fusion-harness/db";
+import { createAuditEvent, getFusionRun, getFusionRunDetail, listFusionRuns, listRunEvents, updateFusionRunTitle } from "@fusion-harness/db";
 import { approvalRequestSchema, formatEntityId, fusionContinueRequestSchema, fusionRunRequestSchema, fusionRunTitleUpdateRequestSchema } from "@fusion-harness/shared";
 import { Hono } from "hono";
 import type { AppBindings } from "../env";
@@ -13,6 +13,8 @@ import {
   pauseRun,
   reconcileFusionRun,
   resumeRun,
+  retryPanelJob,
+  retryRun,
   RunCreationError,
   RunLifecycleError,
 } from "../services/runs";
@@ -21,12 +23,30 @@ export const fusionRunRoutes = new Hono<AppBindings>()
   .get("/", async (c) => {
     const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const limit = Number(c.req.query("limit") ?? 25);
-    return c.json({ data: await listFusionRuns(c.env.DB, principal.orgId, Math.min(Math.max(limit, 1), 100)) });
+
+    const cacheKey = `runs:list:${principal.orgId}:${limit}`;
+    if (c.env.KV) {
+      const cached = await c.env.KV.get(cacheKey);
+      if (cached) {
+        return c.json({ data: JSON.parse(cached), cached: true });
+      }
+    }
+
+    const data = await listFusionRuns(c.env.DB, principal.orgId, Math.min(Math.max(limit, 1), 100));
+    if (c.env.KV) {
+      await c.env.KV.put(cacheKey, JSON.stringify(data), { expirationTtl: 10 });
+    }
+    return c.json({ data });
   })
   .post("/", async (c) => {
     const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const payload = fusionRunRequestSchema.parse(await c.req.json());
     const { run, promptObjectKey } = await createRunFromRequest(c.env, principal, payload);
+
+    if (c.env.KV) {
+      await c.env.KV.delete(`runs:list:${principal.orgId}:25`).catch(() => {});
+      await c.env.KV.delete(`runs:list:${principal.orgId}:30`).catch(() => {});
+    }
 
     return c.json({ ...run, promptObjectKey }, 202);
   })
@@ -45,7 +65,7 @@ export const fusionRunRoutes = new Hono<AppBindings>()
   .get("/:id/events", async (c) => {
     const runId = c.req.param("id");
     const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
-    const run = await getFusionRunDetail(c.env.DB, principal.orgId, runId);
+    const run = await getFusionRun(c.env.DB, principal.orgId, runId);
     if (!run) {
       return c.json({ error: "Run not found" }, 404);
     }
@@ -55,7 +75,10 @@ export const fusionRunRoutes = new Hono<AppBindings>()
       return c.env.FUSION_RUN.get(id).fetch(c.req.raw);
     }
 
-    await reconcileFusionRun(c.env, principal.orgId, runId);
+    if (run.status === "running") {
+      await reconcileFusionRun(c.env, principal.orgId, runId);
+    }
+
     const afterSeq = Number(c.req.query("afterSeq") ?? 0);
     const limit = Number(c.req.query("limit") ?? 1000);
     return c.json({
@@ -72,6 +95,16 @@ export const fusionRunRoutes = new Hono<AppBindings>()
     const { run, promptObjectKey } = await continueRun(c.env, principal, runId, body.message);
 
     return c.json({ ...run, promptObjectKey }, 202);
+  })
+  .post("/:id/retry", async (c) => {
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
+    const { run, promptObjectKey } = await retryRun(c.env, principal, c.req.param("id"));
+    return c.json({ ...run, promptObjectKey }, 202);
+  })
+  .post("/:id/jobs/:jobId/retry", async (c) => {
+    const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
+    await retryPanelJob(c.env, principal, c.req.param("id"), c.req.param("jobId"));
+    return c.json({ status: "queued" }, 202);
   })
   .post("/:id/rename", async (c) => {
     const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
@@ -117,6 +150,12 @@ export const fusionRunRoutes = new Hono<AppBindings>()
   .delete("/:id", async (c) => {
     const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     await deleteRun(c.env, principal, c.req.param("id"));
+
+    if (c.env.KV) {
+      await c.env.KV.delete(`runs:list:${principal.orgId}:25`).catch(() => {});
+      await c.env.KV.delete(`runs:list:${principal.orgId}:30`).catch(() => {});
+    }
+
     return c.json({ status: "deleted" }, 202);
   });
 

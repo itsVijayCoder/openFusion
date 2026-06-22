@@ -39,7 +39,7 @@ export function FinalOutputModal({ title, subtitle, status, content, error, onCl
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed left-1/2 top-1/2 z-50 flex h-[min(85vh,700px)] w-[min(900px,92vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
           <div className="min-w-0">

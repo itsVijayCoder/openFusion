@@ -16,6 +16,7 @@ export const RUN_EVENT_TYPES = [
   "judge.output.delta",
   "judge.completed",
   "judge.failed",
+  "judge.fallback",
   "final.started",
   "final.thinking.delta",
   "final.delta",

@@ -16,6 +16,8 @@ export type Env = {
   GITHUB_APP_PRIVATE_KEY: string;
   GITHUB_WEBHOOK_SECRET: string;
   GITHUB_APP_SLUG?: string;
+  FEATURE_NEW_PROMPTS?: string;
+  KV?: KVNamespace;
 };
 
 export type AppBindings = {
