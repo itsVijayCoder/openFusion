@@ -346,7 +346,11 @@ export async function ensurePrincipal(db: D1DatabaseLike, input: PrincipalInput)
 export async function listFusionRuns(db: D1DatabaseLike, orgId: string, limit = 25) {
   const { results } = await db
     .prepare(
-      `SELECT * FROM fusion_runs
+      `SELECT id, org_id, workspace_id, user_id, runner_id, status, mode, preset,
+              permission_profile, prompt_object_key, judge_object_key, final_object_key,
+              execution_plan_json, parent_run_id, conversation_id, title, error,
+              created_at, started_at, completed_at
+       FROM fusion_runs
        WHERE org_id = ?
        ORDER BY created_at DESC
        LIMIT ?`,

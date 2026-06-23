@@ -133,31 +133,63 @@ const indexHTML = `<!doctype html>
   <title>Fusion Harness</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #050607;
-      --panel: #0b0c0e;
-      --surface: #111214;
-      --surface-2: #151618;
-      --line: rgba(255,255,255,.11);
-      --line-strong: rgba(255,255,255,.17);
-      --text: #f4f4f5;
+      color-scheme: light dark;
+      --bg: #fafafa;
+      --panel: #ffffff;
+      --surface: #f4f4f5;
+      --surface-2: #e4e4e7;
+      --line: rgba(0,0,0,.10);
+      --line-strong: rgba(0,0,0,.16);
+      --text: #18181b;
       --muted: #71717a;
       --soft: #a1a1aa;
-      --accent: #67e8f9;
-      --accent-2: #34d399;
-      --danger: #fca5a5;
+      --accent: #0891b2;
+      --accent-2: #059669;
+      --danger: #dc2626;
+      --rail-bg: #f4f4f5;
+      --pill-active-bg: #18181b;
+      --pill-active-fg: #fafafa;
+      --chip-bg: rgba(0,0,0,.05);
+      --chip-fg: #3f3f46;
+      --hover-bg: rgba(0,0,0,.06);
+      --input-bg: #ffffff;
+      --shadow: 0 20px 60px rgba(0,0,0,.10);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #050607;
+        --panel: #0b0c0e;
+        --surface: #111214;
+        --surface-2: #151618;
+        --line: rgba(255,255,255,.11);
+        --line-strong: rgba(255,255,255,.17);
+        --text: #f4f4f5;
+        --muted: #71717a;
+        --soft: #a1a1aa;
+        --accent: #67e8f9;
+        --accent-2: #34d399;
+        --danger: #fca5a5;
+        --rail-bg: #08090b;
+        --pill-active-bg: #f4f4f5;
+        --pill-active-fg: #09090b;
+        --chip-bg: rgba(255,255,255,.06);
+        --chip-fg: #d4d4d8;
+        --hover-bg: rgba(255,255,255,.08);
+        --input-bg: #090a0c;
+        --shadow: 0 20px 60px rgba(0,0,0,.36);
+      }
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text); }
     button, input, select, textarea { font: inherit; }
     .app { min-height: 100vh; display: grid; grid-template-columns: 260px minmax(0, 1fr); }
-    .rail { border-right: 1px solid var(--line); background: #08090b; display: flex; flex-direction: column; min-height: 100vh; }
+    .rail { border-right: 1px solid var(--line); background: var(--rail-bg); display: flex; flex-direction: column; min-height: 100vh; }
     .brand { height: 56px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 0 20px; font-size: 14px; font-weight: 700; }
-    .mark { width: 26px; height: 26px; display: grid; place-items: center; background: #f4f4f5; color: #09090b; border-radius: 6px; font-weight: 800; }
+    .mark { width: 26px; height: 26px; display: grid; place-items: center; background: var(--pill-active-bg); color: var(--pill-active-fg); border-radius: 6px; font-weight: 800; }
     .rail-main { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    .rail-button { height: 36px; border: 0; border-radius: 6px; background: rgba(255,255,255,.06); color: #e4e4e7; text-align: left; padding: 0 12px; font-weight: 650; cursor: pointer; }
-    .rail-button:hover { background: rgba(255,255,255,.09); }
+    .rail-button { height: 36px; border: 0; border-radius: 6px; background: var(--chip-bg); color: var(--text); text-align: left; padding: 0 12px; font-weight: 650; cursor: pointer; }
+    .rail-button:hover { background: var(--hover-bg); }
     .rail-footer { margin-top: auto; border-top: 1px solid var(--line); padding: 14px 16px; color: var(--muted); font-size: 12px; line-height: 1.6; }
     .main { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
     .top { height: 56px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: flex-end; padding: 0 20px; }
@@ -168,53 +200,62 @@ const indexHTML = `<!doctype html>
     .headline { text-align: center; margin-bottom: 28px; }
     .headline h1 { margin: 0; font-size: 32px; line-height: 1.15; letter-spacing: 0; }
     .headline p { margin: 12px 0 0; color: var(--muted); font-size: 14px; font-weight: 600; }
-    .composer { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.36); }
+    .composer { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); }
     .toolbar { display: grid; gap: 14px; padding: 14px; }
     .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .pill { height: 32px; border-radius: 999px; border: 0; background: rgba(255,255,255,.045); color: var(--muted); padding: 0 12px; font-size: 12px; font-weight: 750; cursor: pointer; }
-    .pill.active { background: #f4f4f5; color: #09090b; }
-    .chip { display: inline-flex; height: 32px; align-items: center; gap: 8px; border: 1px solid var(--line-strong); background: rgba(255,255,255,.06); border-radius: 6px; padding: 0 10px; color: #d4d4d8; font-size: 12px; font-weight: 750; }
+    .pill { height: 32px; border-radius: 999px; border: 0; background: var(--chip-bg); color: var(--muted); padding: 0 12px; font-size: 12px; font-weight: 750; cursor: pointer; }
+    .pill.active { background: var(--pill-active-bg); color: var(--pill-active-fg); }
+    .chip { display: inline-flex; height: 32px; align-items: center; gap: 8px; border: 1px solid var(--line-strong); background: var(--chip-bg); border-radius: 6px; padding: 0 10px; color: var(--chip-fg); font-size: 12px; font-weight: 750; }
     .chip button { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0; }
-    .ghost { height: 32px; border: 1px dashed rgba(255,255,255,.22); background: transparent; color: var(--soft); border-radius: 6px; padding: 0 12px; font-size: 12px; font-weight: 750; cursor: pointer; }
-    .ghost:hover { border-color: rgba(255,255,255,.42); color: var(--text); }
+    .ghost { height: 32px; border: 1px dashed var(--line-strong); background: transparent; color: var(--soft); border-radius: 6px; padding: 0 12px; font-size: 12px; font-weight: 750; cursor: pointer; }
+    .ghost:hover { border-color: var(--soft); color: var(--text); }
     .micro-label { color: var(--muted); font-size: 12px; font-weight: 750; }
     textarea { display: block; width: 100%; min-height: 170px; resize: vertical; border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--text); padding: 22px 24px; outline: none; line-height: 1.55; }
-    textarea::placeholder { color: #52525b; }
+    textarea::placeholder { color: var(--muted); }
     .bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; }
     .iconbar { display: flex; gap: 6px; color: var(--muted); }
     .iconbar button, .send { width: 34px; height: 34px; border-radius: 6px; border: 0; display: grid; place-items: center; cursor: pointer; }
     .iconbar button { background: transparent; color: inherit; }
-    .iconbar button:hover { background: rgba(255,255,255,.08); color: var(--text); }
+    .iconbar button:hover { background: var(--hover-bg); color: var(--text); }
     .send { background: var(--accent); color: white; font-size: 18px; }
     .send:disabled { opacity: .45; cursor: not-allowed; }
     .options { margin-top: 12px; display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); color: var(--muted); font-size: 12px; }
-    .field { border: 1px solid var(--line); background: rgba(255,255,255,.03); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+    .field { border: 1px solid var(--line); background: var(--chip-bg); border-radius: 6px; padding: 8px 10px; min-width: 0; }
     .field label { display: block; color: var(--soft); font-weight: 750; margin-bottom: 6px; }
     .field input, .field select { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--muted); }
     .output { margin-top: 18px; display: none; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 14px; }
     .output.visible { display: grid; }
     .panel { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; overflow: hidden; }
     .panel h2 { margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
-    .panel pre { margin: 0; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; color: #d4d4d8; font-size: 13px; line-height: 1.55; max-height: 460px; overflow: auto; }
+    .panel pre { margin: 0; padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font-size: 13px; line-height: 1.55; max-height: 460px; overflow: auto; }
     .trace-item { border-bottom: 1px solid var(--line); padding: 12px 14px; }
     .trace-item:last-child { border-bottom: 0; }
     .trace-title { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 750; }
     .trace-meta { margin-top: 4px; color: var(--muted); font-size: 12px; }
     .trace-error { margin-top: 6px; color: var(--danger); font-size: 12px; }
-    .modal { position: fixed; inset: 0; display: none; place-items: center; padding: 18px; background: rgba(0,0,0,.76); z-index: 20; }
+    .trace-status { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+    .trace-status.queued { background: var(--chip-bg); color: var(--muted); }
+    .trace-status.running { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    .trace-status.completed { background: color-mix(in srgb, var(--accent-2) 15%, transparent); color: var(--accent-2); }
+    .trace-status.failed { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+    .trace-spinner { display: inline-block; width: 10px; height: 10px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .trace-retry { margin-top: 6px; height: 26px; border: 1px solid var(--line-strong); background: var(--chip-bg); color: var(--soft); border-radius: 6px; padding: 0 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .trace-retry:hover { background: var(--hover-bg); color: var(--text); }
+    .modal { position: fixed; inset: 0; display: none; place-items: center; padding: 18px; background: color-mix(in srgb, var(--bg) 76%, transparent); z-index: 20; }
     .modal.visible { display: grid; }
     .picker { width: min(920px, 100%); max-height: min(620px, calc(100vh - 36px)); display: grid; grid-template-columns: minmax(0, 1fr) 280px; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 8px; overflow: hidden; }
     .picker-main { min-width: 0; display: flex; flex-direction: column; }
     .picker-head { padding: 12px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; }
-    .picker-head input { flex: 1; height: 38px; border: 1px solid var(--line-strong); background: #090a0c; color: var(--text); border-radius: 6px; padding: 0 12px; outline: none; }
-    .picker-head button { width: 38px; border: 0; border-radius: 6px; background: rgba(255,255,255,.06); color: var(--soft); cursor: pointer; }
+    .picker-head input { flex: 1; height: 38px; border: 1px solid var(--line-strong); background: var(--input-bg); color: var(--text); border-radius: 6px; padding: 0 12px; outline: none; }
+    .picker-head button { width: 38px; border: 0; border-radius: 6px; background: var(--chip-bg); color: var(--soft); cursor: pointer; }
     .models { overflow: auto; min-height: 260px; }
     .model-option { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; text-align: left; display: flex; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; }
-    .model-option:hover, .model-option.selected { background: rgba(255,255,255,.065); }
-    .badge { width: 28px; height: 28px; border-radius: 6px; background: white; color: black; display: grid; place-items: center; font-size: 12px; font-weight: 900; flex: 0 0 auto; }
+    .model-option:hover, .model-option.selected { background: var(--hover-bg); }
+    .badge { width: 28px; height: 28px; border-radius: 6px; background: var(--pill-active-bg); color: var(--pill-active-fg); display: grid; place-items: center; font-size: 12px; font-weight: 900; flex: 0 0 auto; }
     .model-copy { min-width: 0; flex: 1; }
     .model-name, .model-sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .model-name { font-size: 13px; font-weight: 800; color: #e4e4e7; }
+    .model-name { font-size: 13px; font-weight: 800; color: var(--text); }
     .model-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
     .custom { padding: 12px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 8px; }
     .custom input, .custom select, .custom button { height: 36px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--soft); padding: 0 10px; }

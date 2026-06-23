@@ -1,7 +1,7 @@
 "use client";
 
 import { computeAnalysis, confidenceLabel, type PanelOutput as AnalysisPanelOutput } from "@fusion-harness/core";
-import { extractReadableOutput, normalizeError, type FusionRunDetail, type RunEvent, type RunStatus } from "@fusion-harness/shared";
+import { extractReadableOutput, normalizeError, type ChatMessage, type FusionRunDetail, type RunEvent, type RunStatus } from "@fusion-harness/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -95,10 +95,12 @@ export function RunChat({ run }: RunChatProps) {
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleSaving, setTitleSaving] = useState(false);
   const [retryingJobId, setRetryingJobId] = useState<string | undefined>(undefined);
+  const [loadedMessages, setLoadedMessages] = useState(run.messages ?? []);
+  const [messagesLoaded, setMessagesLoaded] = useState(Boolean(run.messages?.length));
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const initialStatus = run.status;
-  const messages = useMemo(() => run.messages ?? [], [run.messages]);
+  const messages = loadedMessages;
   const title = renamedTitle?.runId === run.id ? renamedTitle.title : (run.title ?? run.id);
 
   useEffect(() => {
@@ -147,6 +149,25 @@ export function RunChat({ run }: RunChatProps) {
   }, [run.id]);
 
   useEffect(() => {
+    if (messages.length > 0 || messagesLoaded) return;
+    let cancelled = false;
+    async function loadMessages() {
+      try {
+        const response = await fetch(apiUrl(`/api/fusion/runs/${run.id}`), { cache: "no-store", credentials: "include" });
+        if (!response.ok || cancelled) return;
+        const body = (await response.json().catch(() => ({}))) as { messages?: ChatMessage[] };
+        if (cancelled || !Array.isArray(body.messages)) return;
+        setLoadedMessages(body.messages);
+        setMessagesLoaded(true);
+      } catch {
+        setMessagesLoaded(true);
+      }
+    }
+    void loadMessages();
+    return () => { cancelled = true; };
+  }, [run.id, messages.length, messagesLoaded]);
+
+  useEffect(() => {
     let cancelled = false;
     async function loadChats() {
       try {
@@ -172,9 +193,7 @@ export function RunChat({ run }: RunChatProps) {
       }
     }
     void loadChats();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const trace = useMemo(() => buildTrace(events, initialStatus, run), [events, initialStatus, run]);
@@ -183,9 +202,10 @@ export function RunChat({ run }: RunChatProps) {
   const isRunActive = currentStatus === "queued" || currentStatus === "running" || currentStatus === "waiting_approval";
   const isRunInProgress = isRunActive || currentStatus === "paused";
   const showLiveOutput = finalText.trim().length > 0 || trace.final.status === "running";
-  const showThinking = isRunActive && !showLiveOutput;
+  const hasPanels = trace.panels.length > 0;
   const hasPanelOutputs = trace.panels.some((p) => p.text.trim().length > 0 || p.status === "running" || p.status === "completed");
   const hasFinalOutput = finalText.trim().length > 0 || trace.final.status !== "queued";
+  const showSources = hasPanels || hasFinalOutput || !isRunActive;
 
   const analysis = useMemo(() => {
     const completedPanels = trace.panels.filter((p) => p.status === "completed" && p.text.trim());
@@ -202,16 +222,17 @@ export function RunChat({ run }: RunChatProps) {
     }
   }, [trace.panels]);
 
+  const panelTextLength = useMemo(() => trace.panels.reduce((sum, p) => sum + p.text.length, 0), [trace.panels]);
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, finalText, showThinking, trace.panels.length]);
+  }, [messages, finalText, trace.panels.length, panelTextLength]);
 
   async function handleContinue() {
     const message = continueMessage.trim();
     if (!message || isSending || isRunInProgress) return;
-
     setIsSending(true);
     setSendError(undefined);
     try {
@@ -307,7 +328,6 @@ export function RunChat({ run }: RunChatProps) {
       setTitleEditing(false);
       return;
     }
-
     setTitleSaving(true);
     setSendError(undefined);
     try {
@@ -350,22 +370,18 @@ export function RunChat({ run }: RunChatProps) {
       messages.map((m) => `**${m.role}:** ${m.content}`).join("\n\n"),
       "",
     ];
-
     if (trace.panels.length > 0) {
       parts.push("## Panel Outputs", "");
       for (const panel of trace.panels) {
         parts.push(`### ${panel.modelId}`, "", panel.text || "(no output)", "");
       }
     }
-
     if (trace.synthesis.text) {
       parts.push("## Judge / Synthesis", "", trace.synthesis.text, "");
     }
-
     if (finalText) {
       parts.push("## Final Output", "", finalText, "");
     }
-
     const blob = new Blob([parts.join("\n")], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -455,9 +471,7 @@ export function RunChat({ run }: RunChatProps) {
                 </div>
               )}
               <StatusPill value={currentStatus} />
-              {analysis ? (
-                <ConfidenceBadge confidence={analysis.confidence} />
-              ) : null}
+              {analysis ? <ConfidenceBadge confidence={analysis.confidence} /> : null}
               <span className="hidden text-xs text-muted-foreground sm:inline">
                 {run.mode} · {formatDateTime(run.createdAt)}
               </span>
@@ -513,26 +527,34 @@ export function RunChat({ run }: RunChatProps) {
             <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
               {messages.length > 0 ? (
                 messages.map((message, index) => (
-                  <MessageBubble key={index} role={message.role} content={message.content} />
+                  <MessageBubble
+                    key={index}
+                    role={message.role}
+                    content={message.content}
+                    canRetry={message.role === "user" && index === 0 && !isRunActive}
+                    onRetry={message.role === "user" && index === 0 ? () => void handleLifecycleAction("retry") : undefined}
+                  />
                 ))
               ) : (
                 <div className="rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center">
-                  <p className="text-sm text-muted-foreground">Initial prompt not available for this run.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {messagesLoaded ? "No prompt was recorded for this run." : "Loading prompt..."}
+                  </p>
                 </div>
               )}
 
-              {showThinking ? <ThinkingIndicator trace={trace} /> : null}
+              {isRunActive && !showLiveOutput && trace.panels.length === 0 ? <ThinkingIndicator trace={trace} /> : null}
 
-              {(trace.panels.length > 0 || hasFinalOutput || !isRunActive) && !showThinking ? (
+              {showSources ? (
                 <SourcesSection
                   trace={trace}
                   finalText={finalText}
                   analysis={analysis}
+                  isRunActive={isRunActive}
                   onOpenPanel={openPanelDrawer}
                   onOpenFinal={() => setShowFinalModal(true)}
                   onRetryPanel={handleRetryPanelJob}
                   retryingJobId={retryingJobId}
-                  isRunActive={isRunActive}
                 />
               ) : null}
 
@@ -601,15 +623,10 @@ export function RunChat({ run }: RunChatProps) {
       ) : null}
 
       {showCompare ? (
-        <ComparisonOverlay
-          panels={trace.panels}
-          onClose={() => setShowCompare(false)}
-        />
+        <ComparisonOverlay panels={trace.panels} onClose={() => setShowCompare(false)} />
       ) : null}
 
-      {showDetails ? (
-        <DetailsPanel run={run} onClose={() => setShowDetails(false)} />
-      ) : null}
+      {showDetails ? <DetailsPanel run={run} onClose={() => setShowDetails(false)} /> : null}
     </div>
   );
 }
@@ -711,17 +728,32 @@ function MessageBubble({
   content,
   error,
   isStreaming,
+  canRetry,
+  onRetry,
 }: {
   role: "user" | "assistant" | "system";
   content: string;
   error?: string;
   isStreaming?: boolean;
+  canRetry?: boolean;
+  onRetry?: () => void;
 }) {
   const isUser = role === "user";
   const isSystem = role === "system";
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // ignore
+    }
+  }
 
   return (
-    <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
+    <div className={cn("group flex gap-3", isUser && "flex-row-reverse")}>
       <div
         className={cn(
           "flex size-8 shrink-0 items-center justify-center rounded-lg",
@@ -730,27 +762,49 @@ function MessageBubble({
       >
         {isUser ? <RiUserLine aria-hidden className="size-4" /> : <RiRobot2Line aria-hidden className="size-4" />}
       </div>
-      <div
-        className={cn(
-          "min-w-0 max-w-[calc(100%-3rem)] rounded-2xl px-4 py-3 text-sm leading-6",
-          isUser
-            ? "rounded-tr-md bg-primary text-primary-foreground"
-            : isSystem
-              ? "rounded-tl-md bg-muted/50 text-muted-foreground italic"
-              : "rounded-tl-md bg-muted text-foreground",
-        )}
-      >
-        {error ? (
-          <p className="break-words text-destructive [overflow-wrap:anywhere]">{error}</p>
-        ) : content ? (
-          <div className="break-words [overflow-wrap:anywhere]">
-            {isUser ? (
-              <div className="whitespace-pre-wrap">{content}</div>
-            ) : (
-              <MarkdownRenderer content={content} />
-            )}
-            {isStreaming ? (
-              <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/60 align-middle" />
+      <div className="min-w-0 max-w-[calc(100%-3rem)]">
+        <div
+          className={cn(
+            "rounded-2xl px-4 py-3 text-sm leading-6",
+            isUser
+              ? "rounded-tr-md bg-primary text-primary-foreground"
+              : isSystem
+                ? "rounded-tl-md bg-muted/50 text-muted-foreground italic"
+                : "rounded-tl-md bg-muted text-foreground",
+          )}
+        >
+          {error ? (
+            <p className="break-words text-destructive [overflow-wrap:anywhere]">{error}</p>
+          ) : content ? (
+            <div className="break-words [overflow-wrap:anywhere]">
+              {isUser ? (
+                <div className="whitespace-pre-wrap">{content}</div>
+              ) : (
+                <MarkdownRenderer content={content} />
+              )}
+              {isStreaming ? (
+                <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/60 align-middle" />
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        {isUser && content ? (
+          <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              {copied ? <RiCheckLine aria-hidden className="size-3" /> : <RiFileList3Line aria-hidden className="size-3" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {canRetry && onRetry ? (
+              <button
+                onClick={onRetry}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <RiRefreshLine aria-hidden className="size-3" />
+                Retry
+              </button>
             ) : null}
           </div>
         ) : null}
@@ -808,24 +862,23 @@ type SourcesSectionProps = {
   trace: Trace;
   finalText: string;
   analysis: ReturnType<typeof computeAnalysis> | null;
+  isRunActive: boolean;
   onOpenPanel: (panel: PanelTrace) => void;
   onOpenFinal: () => void;
   onRetryPanel: (jobId: string) => void;
   retryingJobId?: string;
-  isRunActive: boolean;
 };
 
 function SourcesSection({
   trace,
   finalText,
   analysis,
+  isRunActive,
   onOpenPanel,
   onOpenFinal,
   onRetryPanel,
   retryingJobId,
-  isRunActive,
 }: SourcesSectionProps) {
-  const hasPanels = trace.panels.length > 0;
   const hasFinal = finalText.trim().length > 0 || trace.final.status !== "queued";
 
   return (
@@ -839,9 +892,14 @@ function SourcesSection({
             Judge fallback: using {trace.judgeFallback.model}
           </span>
         ) : null}
+        {isRunActive && trace.panels.length > 0 ? (
+          <span className="text-[12px] text-muted-foreground">
+            {trace.panels.filter((p) => p.status === "completed").length}/{trace.panels.length} complete
+          </span>
+        ) : null}
       </div>
 
-      {hasPanels ? (
+      {trace.panels.length > 0 ? (
         <div className="flex flex-col gap-2">
           {trace.panels.map((panel) => (
             <ModelCard
@@ -856,7 +914,7 @@ function SourcesSection({
         </div>
       ) : null}
 
-      {(trace.synthesis.status !== "queued" || trace.judgeFallback) ? (
+      {trace.synthesis.status !== "queued" || trace.judgeFallback ? (
         <SynthesisIndicator
           status={trace.synthesis.status}
           fallback={trace.judgeFallback}
@@ -905,48 +963,96 @@ function ModelCard({
   isRetrying: boolean;
   canRetry: boolean;
 }) {
-  const preview = panel.text.trim();
-  const previewTruncated = preview.length > 200 ? `${preview.slice(0, 200)}...` : preview;
+  const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const hasOutput = panel.text.trim().length > 0;
+  const isRunning = panel.status === "running";
+  const isCompleted = panel.status === "completed";
+
+  async function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(panel.text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // ignore
+    }
+  }
 
   return (
     <div
       className={cn(
         "group relative overflow-hidden rounded-xl border bg-card transition-all duration-200",
-        panel.status === "running" && "border-primary/30",
-        panel.status === "completed" && "border-border",
+        isRunning && "border-primary/30",
+        isCompleted && "border-border",
         panel.status === "failed" && "border-destructive/30",
         panel.status === "queued" && "border-border",
       )}
     >
-      <button
+      <div
+        className="flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left"
         onClick={onClick}
-        className="flex w-full items-center gap-3 px-3 py-3 text-left"
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        }}
       >
         <StatusSpinner status={panel.status} />
         <ModelBadge adapter={panel.adapter} modelId={panel.modelId} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-medium text-foreground">{panel.modelId}</p>
-          <p className="truncate text-[11px] text-muted-foreground">
-            {statusLabel(panel)}
-          </p>
+          <p className="truncate text-[11px] text-muted-foreground">{statusLabel(panel)}</p>
         </div>
-        {preview ? (
+        {hasOutput ? (
           <span className="hidden text-[11px] text-muted-foreground sm:inline">
-            {preview.length > 50 ? `${Math.round(preview.length / 1000 * 10) / 10}k chars` : `${preview.length} chars`}
+            {panel.text.length > 999 ? `${(panel.text.length / 1000).toFixed(1)}k chars` : `${panel.text.length} chars`}
           </span>
         ) : null}
-        <RiArrowRightLine aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-      </button>
-      {preview && panel.status === "running" ? (
-        <div className="border-t border-border px-3 py-2">
-          <p className="line-clamp-2 text-[11px] text-muted-foreground">{previewTruncated}</p>
+        {hasOutput ? (
+          <button
+            onClick={handleCopy}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+            title="Copy output"
+          >
+            {copied ? <RiCheckLine aria-hidden className="size-3.5 text-primary" /> : <RiFileList3Line aria-hidden className="size-3.5" />}
+          </button>
+        ) : null}
+        {hasOutput && isCompleted ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded((v) => !v);
+            }}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            title={expanded ? "Collapse" : "Expand"}
+          >
+            <RiArrowRightLine aria-hidden className={cn("size-3.5 transition-transform", expanded && "rotate-90")} />
+          </button>
+        ) : null}
+      </div>
+
+      {hasOutput && (isRunning || expanded) ? (
+        <div className="border-t border-border px-3 py-2.5">
+          <div className="max-h-[400px] overflow-y-auto">
+            <MarkdownRenderer content={panel.text} />
+            {isRunning ? (
+              <span className="ml-0.5 inline-block h-3.5 w-1 animate-pulse bg-foreground/60 align-middle" />
+            ) : null}
+          </div>
         </div>
       ) : null}
+
       {panel.status === "failed" && panel.error ? (
         <div className="border-t border-destructive/20 px-3 py-2">
           <p className="text-[11px] text-destructive">{normalizeError(panel.error).message}</p>
         </div>
       ) : null}
+
       {canRetry ? (
         <div className="border-t border-border px-3 py-2">
           <button
