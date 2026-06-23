@@ -10,7 +10,7 @@ type RunnerBootstrapProps = {
   hasRunner: boolean;
 };
 
-type CommandKind = "macos" | "windows" | "manual" | "dev";
+type CommandKind = "macos" | "windows";
 
 const productionAppUrl = "https://fusion-harness.asthrix.workers.dev";
 const productionApiUrl = "https://fusion-api.asthrix.workers.dev";
@@ -27,17 +27,11 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
   const macosInstallCommand = installCommand("macos", "<generated-runner-token>");
   const windowsInstallerUrl = `${appUrl}/install/windows.ps1`;
   const windowsInstallCommand = installCommand("windows", "<generated-runner-token>");
-  const manualCommand = manualCommandFor("<generated-runner-token>");
-  const devCommand = devCommandFor("<generated-runner-token>");
 
   async function copyCommand(kind: CommandKind) {
     try {
       setCopyError(undefined);
-      const command = kind === "macos" || kind === "windows"
-        ? installCommand(kind, await createRunnerToken())
-        : kind === "manual"
-          ? manualCommandFor(await createRunnerToken())
-          : devCommandFor(await createRunnerToken());
+      const command = installCommand(kind, await createRunnerToken());
       await navigator.clipboard.writeText(command);
       setCopied(kind);
       window.setTimeout(() => setCopied(undefined), 1800);
@@ -51,14 +45,6 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
       return `curl -fsSL '${macosInstallerUrl}' | bash -s -- --cloud-url '${cloudUrl}' --binary-base-url '${appUrl}/downloads' --token '${token}'`;
     }
     return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm '${windowsInstallerUrl}'))) --cloud-url '${cloudUrl}' --token '${token}'"`;
-  }
-
-  function manualCommandFor(token: string) {
-    return `fusion-runner login --cloud-url '${cloudUrl}' --token '${token}' && fusion-runner serve --cloud-url '${cloudUrl}'`;
-  }
-
-  function devCommandFor(token: string) {
-    return `cd apps/runner-go && go run ./cmd/fusion-runner login --cloud-url '${cloudUrl}' --token '${token}' && go run ./cmd/fusion-runner serve --cloud-url '${cloudUrl}'`;
   }
 
   function refresh() {
@@ -94,7 +80,7 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
           </Button>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <CommandBlock label="macOS LaunchAgent" command={macosInstallCommand} onCopy={() => copyCommand("macos")} copied={copied === "macos"} />
         <CommandBlock
           label="Windows scheduled task"
@@ -102,8 +88,6 @@ export function RunnerBootstrap({ hasRunner }: RunnerBootstrapProps) {
           onCopy={() => copyCommand("windows")}
           copied={copied === "windows"}
         />
-        <CommandBlock label="Manual foreground fallback" command={manualCommand} onCopy={() => copyCommand("manual")} copied={copied === "manual"} />
-        <CommandBlock label="Repo development" command={devCommand} onCopy={() => copyCommand("dev")} copied={copied === "dev"} />
       </div>
     </section>
   );

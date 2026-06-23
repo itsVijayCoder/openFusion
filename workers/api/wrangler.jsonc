@@ -9,8 +9,7 @@
   },
   "vars": {
     "ENVIRONMENT": "production",
-    "PUBLIC_APP_URL": "https://fusion-harness.asthrix.workers.dev",
-    "GITHUB_APP_SLUG": "openfusion-asth-pr-review"
+    "PUBLIC_APP_URL": "https://fusion-harness.asthrix.workers.dev"
   },
   "d1_databases": [
     {

@@ -10,6 +10,7 @@ $RunnerId = ""
 $InstallDir = ""
 $ShimDir = ""
 $NoStart = $false
+$Foreground = $false
 $AllowedRoots = New-Object System.Collections.Generic.List[string]
 
 function Show-Usage {
@@ -27,6 +28,7 @@ Options:
   --install-dir DIR    Binary install directory. Defaults to %USERPROFILE%\.fusion-harness\bin.
   --shim-dir DIR       Directory for fusion-runner.cmd. Defaults to install directory.
   --no-start           Install files without starting the scheduled task.
+  --foreground         Run the runner in the foreground instead of a scheduled task.
   -h, --help           Show this help.
 "@
 }
@@ -79,6 +81,11 @@ for ($i = 0; $i -lt $args.Count; $i++) {
       continue
     }
     { $_ -in @("--no-start", "-NoStart") } {
+      $NoStart = $true
+      continue
+    }
+    { $_ -in @("--foreground", "-Foreground") } {
+      $Foreground = $true
       $NoStart = $true
       continue
     }
@@ -313,9 +320,37 @@ $settings = New-ScheduledTaskSettingsSet @settingsArgs
 $identity = if ($env:USERDOMAIN) { "$env:USERDOMAIN\$env:USERNAME" } else { $env:USERNAME }
 $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Limited
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+if ($Foreground) {
+  Write-Host ""
+  Write-Host "Fusion Runner installed (foreground mode)."
+  Write-Host ""
+  Write-Host "Binary:  $BinaryPath"
+  Write-Host "Command: $CmdShimPath"
+  Write-Host "Config:  $(Join-Path $ConfigDir "config.json")"
+  Write-Host "Logs:    $OutLog"
+  Write-Host "         $ErrLog"
+  Write-Host ""
+  Write-Host "Runner ID: $RunnerId"
+  Write-Host "Cloud URL: $CloudUrl"
+  Write-Host ""
+  Write-Host "Starting in foreground. Press Ctrl+C to stop."
+  & $BinaryPath serve --cloud-url $CloudUrl
+  exit 0
+}
 
-if (-not $NoStart) {
+$taskRegistered = $true
+try {
+  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+} catch {
+  $taskRegistered = $false
+  Write-Warning "Scheduled task registration failed: $_"
+  Write-Host "Falling back to foreground mode." -ForegroundColor Yellow
+  Write-Host "The runner will stay active in this terminal. Press Ctrl+C to stop."
+  & $BinaryPath serve --cloud-url $CloudUrl
+  exit 0
+}
+
+if (-not $NoStart -and $taskRegistered) {
   Start-ScheduledTask -TaskName $TaskName
 }
 

@@ -32,7 +32,6 @@ import { buildArtifactKey } from "../services/artifact-store";
 import { requireAccessIdentity, requireRunnerAccessIdentity } from "../services/auth";
 import { notifyRunnerSessionObject } from "../services/runner-session";
 import { advanceFusionRunAfterJob, notifyFusionRunObject } from "../services/runs";
-import { completePrReviewJob } from "../services/pr-review-execution";
 
 export const runnerRoutes = new Hono<AppBindings>()
   .get("/", async (c) => {
@@ -268,16 +267,7 @@ async function finishRunnerJob(
   });
 
   if (job) {
-    if (job.kind === "pr_review") {
-      await completePrReviewJob(env, orgId, jobId, {
-        status,
-        outputText: body.outputText,
-        error: body.error,
-        outputObjectKey,
-      });
-    } else {
-      await advanceFusionRunAfterJob(env, orgId, job, now);
-    }
+    await advanceFusionRunAfterJob(env, orgId, job, now);
   }
 
   return { job, event };

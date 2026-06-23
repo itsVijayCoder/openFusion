@@ -181,7 +181,7 @@ CREATE TABLE runner_jobs (
   org_id TEXT NOT NULL,
   run_id TEXT NOT NULL,
   runner_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('direct', 'panel', 'judge', 'final', 'command', 'patch', 'pr_review')),
+  kind TEXT NOT NULL CHECK (kind IN ('direct', 'panel', 'judge', 'final', 'command', 'patch')),
   status TEXT NOT NULL CHECK (status IN ('queued', 'paused', 'leased', 'running', 'completed', 'failed', 'timeout', 'cancelled')),
   attempt INTEGER NOT NULL DEFAULT 0,
   lease_owner TEXT,

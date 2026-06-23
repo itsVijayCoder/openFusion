@@ -49,7 +49,7 @@ export type ToolStatus = "detected" | "verified" | "unavailable" | "error";
 
 export type PanelOutputStatus = "queued" | "running" | "completed" | "failed" | "timeout" | "cancelled";
 
-export type RunnerJobKind = "direct" | "panel" | "judge" | "final" | "command" | "patch" | "pr_review";
+export type RunnerJobKind = "direct" | "panel" | "judge" | "final" | "command" | "patch";
 
 export type RunnerJobStatus = "queued" | "paused" | "leased" | "running" | "completed" | "failed" | "timeout" | "cancelled";
 

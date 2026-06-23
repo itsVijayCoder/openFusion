@@ -10,6 +10,7 @@ runner_id=""
 install_dir="${FUSION_RUNNER_INSTALL_DIR:-$HOME/.fusion-harness/bin}"
 symlink_dir="${FUSION_RUNNER_SYMLINK_DIR:-$HOME/.local/bin}"
 start_service=1
+foreground=0
 allowed_roots=()
 
 usage() {
@@ -27,6 +28,7 @@ Options:
   --install-dir DIR    Binary install directory. Defaults to ~/.fusion-harness/bin.
   --symlink-dir DIR    Directory for fusion-runner symlink. Defaults to ~/.local/bin.
   --no-start           Install files without starting the LaunchAgent.
+  --foreground         Run the runner in the foreground instead of a LaunchAgent.
   -h, --help           Show this help.
 USAGE
 }
@@ -58,6 +60,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --no-start)
+      start_service=0
+      shift
+      ;;
+    --foreground)
+      foreground=1
       start_service=0
       shift
       ;;
@@ -218,10 +225,33 @@ PLIST
 uid="$(id -u)"
 launchctl bootout "gui/$uid" "$plist_path" >/dev/null 2>&1 || true
 
+if [[ "$foreground" -eq 1 ]]; then
+  cat <<SUMMARY
+Fusion Runner installed (foreground mode).
+
+Binary:  $binary_path
+Command: $symlink_dir/fusion-runner
+Config:  $config_dir/config.json
+Logs:    $log_dir/runner.out.log
+         $log_dir/runner.err.log
+
+Runner ID: $runner_id
+Cloud URL: $cloud_url
+
+Starting in foreground. Press Ctrl+C to stop.
+SUMMARY
+  exec "$binary_path" serve --cloud-url "$cloud_url"
+fi
+
 if [[ "$start_service" -eq 1 ]]; then
-  launchctl bootstrap "gui/$uid" "$plist_path"
-  launchctl enable "gui/$uid/$label" >/dev/null 2>&1 || true
-  launchctl kickstart -k "gui/$uid/$label" >/dev/null 2>&1 || true
+  if launchctl bootstrap "gui/$uid" "$plist_path" 2>"$log_dir/bootstrap.err.log"; then
+    launchctl enable "gui/$uid/$label" >/dev/null 2>&1 || true
+    launchctl kickstart -k "gui/$uid/$label" >/dev/null 2>&1 || true
+  else
+    echo "LaunchAgent bootstrap failed; falling back to foreground mode." >&2
+    echo "The runner will stay active in this terminal. Press Ctrl+C to stop." >&2
+    exec "$binary_path" serve --cloud-url "$cloud_url"
+  fi
 fi
 
 cat <<SUMMARY

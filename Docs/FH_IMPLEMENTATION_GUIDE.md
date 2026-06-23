@@ -2016,12 +2016,11 @@ V1 is done when:
 2. Cloudflare Sandbox/Containers for team-managed cloud execution.
 3. Claude, Gemini, Copilot, and custom CLI adapters.
 4. IDE extension.
-5. GitHub PR bot.
-6. Policy-as-code for org security.
-7. Fine-grained cost budgets per team/user/workspace.
-8. Evals dashboard.
-9. Long-running autonomous task delegation.
-10. Multi-run comparison and regression tracking.
+5. Policy-as-code for org security.
+6. Fine-grained cost budgets per team/user/workspace.
+7. Evals dashboard.
+8. Long-running autonomous task delegation.
+9. Multi-run comparison and regression tracking.
 
 ---
 

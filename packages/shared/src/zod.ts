@@ -38,7 +38,7 @@ export const runStatusSchema = z.enum(["queued", "running", "paused", "waiting_a
 export const runnerStatusSchema = z.enum(["online", "offline", "disabled"]);
 export const toolKindSchema = z.enum(["opencode", "codex", "docker", "git", "custom"]);
 export const toolStatusSchema = z.enum(["detected", "verified", "unavailable", "error"]);
-export const runnerJobKindSchema = z.enum(["direct", "panel", "judge", "final", "command", "patch", "pr_review"]);
+export const runnerJobKindSchema = z.enum(["direct", "panel", "judge", "final", "command", "patch"]);
 export const runnerJobStatusSchema = z.enum(["queued", "paused", "leased", "running", "completed", "failed", "timeout", "cancelled"]);
 export const artifactKindSchema = z.enum([
   "prompt",

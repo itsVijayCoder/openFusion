@@ -12,10 +12,6 @@ export type Env = {
   AUTH_TRUST_CLOUDFLARE_ACCESS?: string;
   GITHUB_OAUTH_CLIENT_ID?: string;
   GITHUB_OAUTH_CLIENT_SECRET?: string;
-  GITHUB_APP_ID: string;
-  GITHUB_APP_PRIVATE_KEY: string;
-  GITHUB_WEBHOOK_SECRET: string;
-  GITHUB_APP_SLUG?: string;
   FEATURE_NEW_PROMPTS?: string;
 };
 

@@ -76,13 +76,13 @@ export function AuthPanel({ error }: AuthPanelProps) {
             Secure control plane for local AI agents
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-[#aeb8b8]">
-            Every run, GitHub account, PR review, and runner is scoped to your user identity.
+            Every run and runner is scoped to your user identity.
           </p>
           <div className="mt-10 grid max-w-3xl gap-3 sm:grid-cols-3">
             {[
               ["Runs", "Private prompt, trace, artifacts"],
-              ["GitHub", "Installations and PR queues isolated"],
               ["Runners", "Scoped bearer tokens per user"],
+              ["Auth", "HttpOnly sessions and OAuth"],
             ].map(([label, detail]) => (
               <div key={label} className="rounded-3xl border border-white/10 bg-white/[0.055] p-4 shadow-2xl shadow-black/20 backdrop-blur">
                 <p className="text-sm font-semibold text-[#f5f0e8]">{label}</p>
