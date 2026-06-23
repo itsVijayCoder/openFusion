@@ -9,13 +9,14 @@ type SidebarProps = {
   chats: FusionChat[];
   activeChatId: string | null;
   loading: boolean;
+  error?: string | null;
   onNewFusion: () => void;
   onSelectChat: (chatId: string) => void;
   onDeleteChat: (chatId: string) => void;
   onRenameChat: (chatId: string, title: string) => Promise<void> | void;
 };
 
-export function Sidebar({ chats, activeChatId, loading, onNewFusion, onSelectChat, onDeleteChat, onRenameChat }: SidebarProps) {
+export function Sidebar({ chats, activeChatId, loading, error, onNewFusion, onSelectChat, onDeleteChat, onRenameChat }: SidebarProps) {
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [savingChatId, setSavingChatId] = useState<string | null>(null);
@@ -68,6 +69,8 @@ export function Sidebar({ chats, activeChatId, loading, onNewFusion, onSelectCha
               <div key={i} className="h-8 animate-pulse rounded-lg bg-muted/50" />
             ))}
           </div>
+        ) : error ? (
+          <p className="px-3 py-2 text-[12px] text-muted-foreground">{error}</p>
         ) : chats.length === 0 ? (
           <p className="px-3 py-4 text-[13px] text-muted-foreground">No fusions yet.</p>
         ) : (

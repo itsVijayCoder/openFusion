@@ -90,6 +90,7 @@ export function RunChat({ run }: RunChatProps) {
   const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction | null>(null);
   const [chats, setChats] = useState<FusionChat[]>([]);
   const [chatsLoading, setChatsLoading] = useState(true);
+  const [chatsError, setChatsError] = useState<string | null>(null);
   const [renamedTitle, setRenamedTitle] = useState<{ runId: string; title: string } | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -184,7 +185,11 @@ export function RunChat({ run }: RunChatProps) {
           credentials: "include",
           headers: devHeaders(),
         });
-        if (!response.ok || cancelled) return;
+        if (cancelled) return;
+        if (!response.ok) {
+          if (!cancelled) setChatsError(response.status === 401 ? "Sign in to load previous fusions" : `Failed to load (${response.status})`);
+          return;
+        }
         const body = (await response.json().catch(() => ({}))) as { data?: Array<{ id: string; title?: string; status: string; createdAt: string }> };
         if (cancelled || !Array.isArray(body.data)) return;
         setChats(
@@ -196,7 +201,7 @@ export function RunChat({ run }: RunChatProps) {
           })),
         );
       } catch {
-        // Keep the run detail usable even if the history request fails.
+        if (!cancelled) setChatsError("Unable to reach API");
       } finally {
         if (!cancelled) setChatsLoading(false);
       }
@@ -410,6 +415,7 @@ export function RunChat({ run }: RunChatProps) {
           chats={chats}
           activeChatId={run.id}
           loading={chatsLoading}
+          error={chatsError}
           onNewFusion={handleNewFusion}
           onSelectChat={handleSelectChat}
           onDeleteChat={(chatId) => void handleDeleteChat(chatId)}

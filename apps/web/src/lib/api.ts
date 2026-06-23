@@ -25,12 +25,29 @@ export function apiBaseUrl() {
   return configured || localApiBaseUrl;
 }
 
+async function serverCookieHeader(): Promise<Record<string, string>> {
+  if (typeof window !== "undefined") return {};
+  try {
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const allCookies = cookieStore.getAll();
+    if (allCookies.length === 0) return {};
+    const cookieHeader = allCookies.map((c: { name: string; value: string }) => `${c.name}=${c.value}`).join("; ");
+    return { cookie: cookieHeader };
+  } catch {
+    return {};
+  }
+}
+
 export async function apiGet<T>(path: string, fallback: T): Promise<ApiResult<T>> {
   try {
     const response = await fetch(apiUrl(path), {
       cache: "no-store",
       credentials: "include",
-      headers: devHeaders(),
+      headers: {
+        ...devHeaders(),
+        ...(await serverCookieHeader()),
+      },
     });
 
     if (!response.ok) {
@@ -54,6 +71,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     headers: {
       "content-type": "application/json",
       ...devHeaders(),
+      ...(await serverCookieHeader()),
     },
     body: JSON.stringify(body),
   });
@@ -70,7 +88,10 @@ export async function apiDelete<T>(path: string): Promise<T> {
   const response = await fetch(apiUrl(path), {
     method: "DELETE",
     credentials: "include",
-    headers: devHeaders(),
+    headers: {
+      ...devHeaders(),
+      ...(await serverCookieHeader()),
+    },
   });
 
   if (!response.ok) {

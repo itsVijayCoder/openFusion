@@ -36,6 +36,7 @@ export function FusionApp({ models: initialModels = [] }: FusionAppProps) {
   const [fuseModelId, setFuseModelId] = useState<string | null>(null);
   const [chats, setChats] = useState<FusionChat[]>([]);
   const [chatsLoading, setChatsLoading] = useState(true);
+  const [chatsError, setChatsError] = useState<string | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,10 +85,15 @@ export function FusionApp({ models: initialModels = [] }: FusionAppProps) {
     async function load() {
       try {
         const res = await fetch(apiUrl("/api/fusion/runs?limit=30"), {
+          cache: "no-store",
           credentials: "include",
           headers: devHeaders(),
         });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          if (!cancelled) setChatsError(res.status === 401 ? "Sign in to load previous fusions" : `Failed to load (${res.status})`);
+          return;
+        }
         const body = (await res.json()) as { data?: Array<{ id: string; title?: string; status: string; createdAt: string }> };
         if (cancelled || !Array.isArray(body.data)) return;
         setChats(
@@ -99,7 +105,7 @@ export function FusionApp({ models: initialModels = [] }: FusionAppProps) {
           })),
         );
       } catch {
-        // ignore
+        if (!cancelled) setChatsError("Unable to reach API");
       } finally {
         if (!cancelled) setChatsLoading(false);
       }
@@ -199,6 +205,7 @@ export function FusionApp({ models: initialModels = [] }: FusionAppProps) {
           chats={chats}
           activeChatId={activeChatId}
           loading={chatsLoading}
+          error={chatsError}
           onNewFusion={handleNewFusion}
           onSelectChat={handleSelectChat}
           onDeleteChat={handleDeleteChat}
