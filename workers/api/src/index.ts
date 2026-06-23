@@ -75,8 +75,15 @@ app.onError((error, c) => {
     return c.json({ error: "Invalid request", issues: error.issues }, 400);
   }
 
-  console.error(JSON.stringify({ level: "error", message: error.message, stack: error.stack }));
-  return c.json({ error: "Internal server error" }, 500);
+  console.error(JSON.stringify({
+    level: "error",
+    message: error.message,
+    name: error.name,
+    stack: error.stack,
+    path: c.req.path,
+    method: c.req.method,
+  }));
+  return c.json({ error: "Internal server error", detail: error.message }, 500);
 });
 
 export default app;

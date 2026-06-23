@@ -26,15 +26,24 @@ export const fusionRunRoutes = new Hono<AppBindings>()
 
     const cacheKey = `runs:list:${principal.orgId}:${limit}`;
     if (c.env.CONFIG_KV) {
-      const cached = await c.env.CONFIG_KV.get(cacheKey);
-      if (cached) {
-        return c.json({ data: JSON.parse(cached), cached: true });
+      try {
+        const cached = await c.env.CONFIG_KV.get(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          return c.json({ data: parsed, cached: true });
+        }
+      } catch {
+        // KV read failure or corrupted cache — fall through to D1
       }
     }
 
     const data = await listFusionRuns(c.env.DB, principal.orgId, Math.min(Math.max(limit, 1), 100));
     if (c.env.CONFIG_KV) {
-      await c.env.CONFIG_KV.put(cacheKey, JSON.stringify(data), { expirationTtl: 10 });
+      try {
+        await c.env.CONFIG_KV.put(cacheKey, JSON.stringify(data), { expirationTtl: 10 });
+      } catch {
+        // KV write failure is non-critical
+      }
     }
     return c.json({ data });
   })

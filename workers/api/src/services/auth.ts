@@ -263,34 +263,43 @@ async function identityFromSession(db: D1Database, env: Env, headers: Headers): 
   if (!token) return null;
 
   const now = new Date().toISOString();
-  const row = await db
-    .prepare(
-      `SELECT
-         auth_sessions.id,
-         auth_sessions.org_id,
-         auth_sessions.user_id,
-         auth_sessions.expires_at,
-         auth_sessions.revoked_at,
-         auth_sessions.last_seen_at,
-         users.email,
-         users.name
-       FROM auth_sessions
-       INNER JOIN users ON users.id = auth_sessions.user_id
-       WHERE auth_sessions.session_hash = ?
-         AND auth_sessions.revoked_at IS NULL
-         AND auth_sessions.expires_at > ?`,
-    )
-    .bind(await sha256Hex(token), now)
-    .first<SessionRow & { last_seen_at: string | null }>();
+  let row: (SessionRow & { last_seen_at: string | null }) | null;
+  try {
+    row = await db
+      .prepare(
+        `SELECT
+           auth_sessions.id,
+           auth_sessions.org_id,
+           auth_sessions.user_id,
+           auth_sessions.expires_at,
+           auth_sessions.revoked_at,
+           auth_sessions.last_seen_at,
+           users.email,
+           users.name
+         FROM auth_sessions
+         INNER JOIN users ON users.id = auth_sessions.user_id
+         WHERE auth_sessions.session_hash = ?
+           AND auth_sessions.revoked_at IS NULL
+           AND auth_sessions.expires_at > ?`,
+      )
+      .bind(await sha256Hex(token), now)
+      .first<SessionRow & { last_seen_at: string | null }>();
+  } catch {
+    return null;
+  }
 
   if (!row) return null;
 
-  const shouldUpdateLastSeen = await shouldUpdateLastSeenAt(env, row.id, row.last_seen_at ?? undefined);
-  if (shouldUpdateLastSeen) {
-    await db
-      .prepare("UPDATE auth_sessions SET last_seen_at = ?, updated_at = ? WHERE id = ?")
-      .bind(now, now, row.id)
-      .run();
+  const shouldUpdate = await shouldUpdateLastSeenAt(env, row.id, row.last_seen_at ?? undefined);
+  if (shouldUpdate) {
+    try {
+      await db
+        .prepare("UPDATE auth_sessions SET last_seen_at = ?, updated_at = ? WHERE id = ?")
+        .bind(now, now, row.id)
+        .run();
+    } catch {
+      // last_seen_at update is non-critical
+    }
   }
 
   return {
@@ -307,15 +316,23 @@ async function shouldUpdateLastSeenAt(env: Env, sessionId: string, lastSeenAt: s
   if (!env.CONFIG_KV) return true;
 
   const cacheKey = `session:lastseen:${sessionId}`;
-  const cached = await env.CONFIG_KV.get(cacheKey);
-  if (cached) return false;
+  try {
+    const cached = await env.CONFIG_KV.get(cacheKey);
+    if (cached) return false;
+  } catch {
+    return true;
+  }
 
   if (lastSeenAt) {
     const elapsed = Date.now() - Date.parse(lastSeenAt);
     if (Number.isFinite(elapsed) && elapsed < 5 * 60 * 1000) return false;
   }
 
-  await env.CONFIG_KV.put(cacheKey, "1", { expirationTtl: 300 });
+  try {
+    await env.CONFIG_KV.put(cacheKey, "1", { expirationTtl: 300 });
+  } catch {
+    // KV write failure is non-critical
+  }
   return true;
 }
 
@@ -325,29 +342,38 @@ async function identityFromBearerToken(db: D1Database, headers: Headers): Promis
   if (!token) return null;
 
   const now = new Date().toISOString();
-  const row = await db
-    .prepare(
-      `SELECT
-         auth_tokens.id,
-         auth_tokens.org_id,
-         auth_tokens.user_id,
-         auth_tokens.kind,
-         auth_tokens.expires_at,
-         auth_tokens.revoked_at,
-         users.email,
-         users.name
-       FROM auth_tokens
-       INNER JOIN users ON users.id = auth_tokens.user_id
-       WHERE auth_tokens.token_hash = ?
-         AND auth_tokens.revoked_at IS NULL
-         AND (auth_tokens.expires_at IS NULL OR auth_tokens.expires_at > ?)`,
-    )
-    .bind(await sha256Hex(token), now)
-    .first<TokenRow>();
+  let row: TokenRow | null;
+  try {
+    row = await db
+      .prepare(
+        `SELECT
+           auth_tokens.id,
+           auth_tokens.org_id,
+           auth_tokens.user_id,
+           auth_tokens.kind,
+           auth_tokens.expires_at,
+           auth_tokens.revoked_at,
+           users.email,
+           users.name
+         FROM auth_tokens
+         INNER JOIN users ON users.id = auth_tokens.user_id
+         WHERE auth_tokens.token_hash = ?
+           AND auth_tokens.revoked_at IS NULL
+           AND (auth_tokens.expires_at IS NULL OR auth_tokens.expires_at > ?)`,
+      )
+      .bind(await sha256Hex(token), now)
+      .first<TokenRow>();
+  } catch {
+    return null;
+  }
 
   if (!row) return null;
 
-  await db.prepare("UPDATE auth_tokens SET last_used_at = ? WHERE id = ?").bind(now, row.id).run();
+  try {
+    await db.prepare("UPDATE auth_tokens SET last_used_at = ? WHERE id = ?").bind(now, row.id).run();
+  } catch {
+    // last_used_at update is non-critical
+  }
 
   return {
     orgId: row.org_id,
