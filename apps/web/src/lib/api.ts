@@ -81,7 +81,7 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function devHeaders(): Record<string, string> {
+export function devHeaders(): Record<string, string> {
   if (typeof window !== "undefined" && !isLocalHost(window.location.hostname)) {
     return {};
   }

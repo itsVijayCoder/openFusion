@@ -77,14 +77,16 @@ export function FinalOutputModal({ title, subtitle, status, content, error, onCl
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-6">
-          {error ? (
-            <p className="break-words text-sm text-destructive">{error}</p>
-          ) : content ? (
-            <MarkdownRenderer content={content} />
-          ) : (
-            <p className="text-sm text-muted-foreground">No output yet.</p>
-          )}
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-6 py-6">
+            {error ? (
+              <p className="break-words text-sm text-destructive">{error}</p>
+            ) : content ? (
+              <MarkdownRenderer content={content} size="lg" />
+            ) : (
+              <p className="text-sm text-muted-foreground">No output yet.</p>
+            )}
+          </div>
         </div>
       </div>
     </>

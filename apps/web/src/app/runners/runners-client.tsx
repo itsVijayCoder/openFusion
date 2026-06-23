@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { ProviderLogo, providerLabel } from "@/components/provider-logo";
 import { Button } from "@/components/ui/button";
-import { apiUrl } from "@/lib/api";
+import { apiUrl, devHeaders } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { RunnerBootstrap } from "./runner-bootstrap";
@@ -433,6 +433,7 @@ async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(apiUrl(path), {
     cache: "no-store",
     credentials: "include",
+    headers: devHeaders(),
   });
 
   if (!response.ok) {

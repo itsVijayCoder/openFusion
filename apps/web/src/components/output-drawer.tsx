@@ -40,7 +40,7 @@ export function OutputDrawer({ title, subtitle, status, content, error, onClose 
   return (
     <>
       <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-lg flex-col border-l border-border bg-secondary">
+      <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-2xl flex-col border-l border-border bg-card shadow-2xl">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -77,14 +77,16 @@ export function OutputDrawer({ title, subtitle, status, content, error, onClose 
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          {error ? (
-            <p className="break-words text-sm text-destructive">{error}</p>
-          ) : content ? (
-            <MarkdownRenderer content={content} />
-          ) : (
-            <p className="text-sm text-muted-foreground">No output yet.</p>
-          )}
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-6 py-6">
+            {error ? (
+              <p className="break-words text-sm text-destructive">{error}</p>
+            ) : content ? (
+              <MarkdownRenderer content={content} size="lg" />
+            ) : (
+              <p className="text-sm text-muted-foreground">No output yet.</p>
+            )}
+          </div>
         </div>
       </div>
     </>

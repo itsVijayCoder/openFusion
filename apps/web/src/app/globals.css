@@ -201,6 +201,21 @@
 }
 
 @layer components {
+  .prose-fusion {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .prose-fusion pre {
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  .prose-fusion pre code {
+    color: var(--foreground);
+  }
+  .prose-fusion-lg p,
+  .prose-fusion-lg li {
+    line-height: 1.75;
+  }
   .provider-logo {
     width: var(--provider-logo-size);
     height: var(--provider-logo-size);

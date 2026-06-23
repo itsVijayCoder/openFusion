@@ -31,7 +31,7 @@ import { StatusPill } from "@/components/product-ui";
 import { Sidebar } from "@/features/fusion/sidebar";
 import { TopNav } from "@/features/fusion/top-nav";
 import type { FusionChat } from "@/features/fusion/types";
-import { apiDelete, apiPost, apiUrl } from "@/lib/api";
+import { apiDelete, apiPost, apiUrl, devHeaders } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -108,7 +108,11 @@ export function RunChat({ run }: RunChatProps) {
     let isActive = true;
 
     async function loadSnapshot() {
-      const response = await fetch(apiUrl(`/api/fusion/runs/${run.id}/events`), { cache: "no-store", credentials: "include" });
+      const response = await fetch(apiUrl(`/api/fusion/runs/${run.id}/events`), {
+        cache: "no-store",
+        credentials: "include",
+        headers: devHeaders(),
+      });
       if (!response.ok) return;
       const body = (await response.json().catch(() => ({}))) as { data?: RunEvent[] };
       if (isActive && Array.isArray(body.data)) {
@@ -153,7 +157,11 @@ export function RunChat({ run }: RunChatProps) {
     let cancelled = false;
     async function loadMessages() {
       try {
-        const response = await fetch(apiUrl(`/api/fusion/runs/${run.id}`), { cache: "no-store", credentials: "include" });
+        const response = await fetch(apiUrl(`/api/fusion/runs/${run.id}`), {
+        cache: "no-store",
+        credentials: "include",
+        headers: devHeaders(),
+      });
         if (!response.ok || cancelled) return;
         const body = (await response.json().catch(() => ({}))) as { messages?: ChatMessage[] };
         if (cancelled || !Array.isArray(body.messages)) return;
@@ -174,6 +182,7 @@ export function RunChat({ run }: RunChatProps) {
         const response = await fetch(apiUrl("/api/fusion/runs?limit=30"), {
           cache: "no-store",
           credentials: "include",
+          headers: devHeaders(),
         });
         if (!response.ok || cancelled) return;
         const body = (await response.json().catch(() => ({}))) as { data?: Array<{ id: string; title?: string; status: string; createdAt: string }> };
@@ -1039,7 +1048,7 @@ function ModelCard({
       {hasOutput && (isRunning || expanded) ? (
         <div className="border-t border-border px-3 py-2.5">
           <div className="max-h-[400px] overflow-y-auto">
-            <MarkdownRenderer content={panel.text} />
+            <MarkdownRenderer content={panel.text} size="lg" />
             {isRunning ? (
               <span className="ml-0.5 inline-block h-3.5 w-1 animate-pulse bg-foreground/60 align-middle" />
             ) : null}
@@ -1207,14 +1216,14 @@ function ComparisonOverlay({
           {completed.map((panel) => (
             <div
               key={panel.jobId}
-              className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-secondary"
+              className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
             >
               <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
                 <ModelBadge adapter={panel.adapter} modelId={panel.modelId} size="sm" />
                 <span className="truncate text-[13px] font-medium text-foreground">{panel.modelId}</span>
               </div>
-              <div className="flex-1 overflow-y-auto p-3">
-                <MarkdownRenderer content={panel.text} />
+              <div className="flex-1 overflow-y-auto p-4">
+                <MarkdownRenderer content={panel.text} size="lg" />
               </div>
             </div>
           ))}

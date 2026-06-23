@@ -9,7 +9,7 @@ import { Sidebar } from "./sidebar";
 import { TopNav } from "./top-nav";
 import type { FusionChat, FusionMode, ModelOption } from "./types";
 import { toModelOption } from "./types";
-import { apiDelete, apiPost, apiUrl } from "@/lib/api";
+import { apiDelete, apiPost, apiUrl, devHeaders } from "@/lib/api";
 
 type FusionAppProps = {
   models?: ModelOption[];
@@ -53,6 +53,7 @@ export function FusionApp({ models: initialModels = [] }: FusionAppProps) {
         const res = await fetch(apiUrl("/api/models"), {
           cache: "no-store",
           credentials: "include",
+          headers: devHeaders(),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -84,6 +85,7 @@ export function FusionApp({ models: initialModels = [] }: FusionAppProps) {
       try {
         const res = await fetch(apiUrl("/api/fusion/runs?limit=30"), {
           credentials: "include",
+          headers: devHeaders(),
         });
         if (!res.ok || cancelled) return;
         const body = (await res.json()) as { data?: Array<{ id: string; title?: string; status: string; createdAt: string }> };
