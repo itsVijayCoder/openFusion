@@ -25,16 +25,16 @@ export const fusionRunRoutes = new Hono<AppBindings>()
     const limit = Number(c.req.query("limit") ?? 25);
 
     const cacheKey = `runs:list:${principal.orgId}:${limit}`;
-    if (c.env.KV) {
-      const cached = await c.env.KV.get(cacheKey);
+    if (c.env.CONFIG_KV) {
+      const cached = await c.env.CONFIG_KV.get(cacheKey);
       if (cached) {
         return c.json({ data: JSON.parse(cached), cached: true });
       }
     }
 
     const data = await listFusionRuns(c.env.DB, principal.orgId, Math.min(Math.max(limit, 1), 100));
-    if (c.env.KV) {
-      await c.env.KV.put(cacheKey, JSON.stringify(data), { expirationTtl: 10 });
+    if (c.env.CONFIG_KV) {
+      await c.env.CONFIG_KV.put(cacheKey, JSON.stringify(data), { expirationTtl: 10 });
     }
     return c.json({ data });
   })
@@ -43,9 +43,9 @@ export const fusionRunRoutes = new Hono<AppBindings>()
     const payload = fusionRunRequestSchema.parse(await c.req.json());
     const { run, promptObjectKey } = await createRunFromRequest(c.env, principal, payload);
 
-    if (c.env.KV) {
-      await c.env.KV.delete(`runs:list:${principal.orgId}:25`).catch(() => {});
-      await c.env.KV.delete(`runs:list:${principal.orgId}:30`).catch(() => {});
+    if (c.env.CONFIG_KV) {
+      await c.env.CONFIG_KV.delete(`runs:list:${principal.orgId}:25`).catch(() => {});
+      await c.env.CONFIG_KV.delete(`runs:list:${principal.orgId}:30`).catch(() => {});
     }
 
     return c.json({ ...run, promptObjectKey }, 202);
@@ -151,9 +151,9 @@ export const fusionRunRoutes = new Hono<AppBindings>()
     const principal = await requireAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     await deleteRun(c.env, principal, c.req.param("id"));
 
-    if (c.env.KV) {
-      await c.env.KV.delete(`runs:list:${principal.orgId}:25`).catch(() => {});
-      await c.env.KV.delete(`runs:list:${principal.orgId}:30`).catch(() => {});
+    if (c.env.CONFIG_KV) {
+      await c.env.CONFIG_KV.delete(`runs:list:${principal.orgId}:25`).catch(() => {});
+      await c.env.CONFIG_KV.delete(`runs:list:${principal.orgId}:30`).catch(() => {});
     }
 
     return c.json({ status: "deleted" }, 202);

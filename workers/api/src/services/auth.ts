@@ -304,10 +304,10 @@ async function identityFromSession(db: D1Database, env: Env, headers: Headers): 
 }
 
 async function shouldUpdateLastSeenAt(env: Env, sessionId: string, lastSeenAt: string | undefined): Promise<boolean> {
-  if (!env.KV) return true;
+  if (!env.CONFIG_KV) return true;
 
   const cacheKey = `session:lastseen:${sessionId}`;
-  const cached = await env.KV.get(cacheKey);
+  const cached = await env.CONFIG_KV.get(cacheKey);
   if (cached) return false;
 
   if (lastSeenAt) {
@@ -315,7 +315,7 @@ async function shouldUpdateLastSeenAt(env: Env, sessionId: string, lastSeenAt: s
     if (Number.isFinite(elapsed) && elapsed < 5 * 60 * 1000) return false;
   }
 
-  await env.KV.put(cacheKey, "1", { expirationTtl: 300 });
+  await env.CONFIG_KV.put(cacheKey, "1", { expirationTtl: 300 });
   return true;
 }
 
