@@ -249,6 +249,12 @@ const indexHTML = `<!doctype html>
     .confidence-badge.medium { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
     .confidence-badge.low { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
     .analysis-meta { color: var(--muted); }
+    .synthesis-analysis { border-bottom: 1px solid var(--line); padding: 12px 14px; }
+    .synthesis-analysis summary { cursor: pointer; font-size: 12px; font-weight: 750; color: var(--soft); list-style: none; }
+    .synthesis-analysis summary::-webkit-details-marker { display: none; }
+    .synthesis-analysis summary::before { content: '▸ '; }
+    .synthesis-analysis[open] summary::before { content: '▾ '; }
+    .synthesis-analysis pre { margin: 8px 0 0; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; line-height: 1.5; }
     .modal { position: fixed; inset: 0; display: none; place-items: center; padding: 18px; background: color-mix(in srgb, var(--bg) 76%, transparent); z-index: 20; }
     .modal.visible { display: grid; }
     .picker { width: min(920px, 100%); max-height: min(620px, calc(100vh - 36px)); display: grid; grid-template-columns: minmax(0, 1fr) 280px; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 8px; overflow: hidden; }
@@ -457,8 +463,12 @@ const indexHTML = `<!doctype html>
       parts.push('</div>');
       return parts.join('');
     }
+    function synthesisAnalysisBlock(text) {
+      if (!text) return '';
+      return '<details class="synthesis-analysis"><summary>Synthesis analysis (Phase A)</summary><pre>' + text.replace(/</g, '&lt;') + '</pre></details>';
+    }
     function renderResult(result) {
-      $('trace').innerHTML = analysisBar(result.analysis) + [...(result.panel || []), result.judge].map(traceItem).join('');
+      $('trace').innerHTML = analysisBar(result.analysis) + synthesisAnalysisBlock(result.synthesisAnalysis) + [...(result.panel || []), result.judge].map(traceItem).join('');
       $('finalAnswer').textContent = result.finalAnswer || result.error || 'No final answer returned.';
     }
     $('closePicker').onclick = closePicker;

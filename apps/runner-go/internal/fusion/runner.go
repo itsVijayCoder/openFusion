@@ -45,9 +45,13 @@ type Result struct {
 	// Analysis is the programmatic pre-analysis computed from panel outputs.
 	// It is a sidecar signal: zero token cost, used to hint the judge and to
 	// surface a confidence badge to the user.
-	Analysis  *Analysis `json:"analysis,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	LatencyMs int64     `json:"latencyMs"`
+	Analysis *Analysis `json:"analysis,omitempty"`
+	// SynthesisAnalysis is the Phase A thinking block extracted from the
+	// two-phase judge output (FEATURE_SYNTHESIS_V2). Empty when the feature is
+	// disabled or the model does not emit the block. Shown in the trace.
+	SynthesisAnalysis string `json:"synthesisAnalysis,omitempty"`
+	Error             string `json:"error,omitempty"`
+	LatencyMs         int64  `json:"latencyMs"`
 }
 
 type ModelOutput struct {
@@ -159,7 +163,12 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 	analysis := computeAnalysis(panelOutputsForAnalysis(panel))
 	allCompleted := len(successfulPanel) == len(panel)
 	analysisHint := buildAnalysisHint(analysis, allCompleted)
-	judge := runSelectedModel(ctx, req, judgeSelection, buildJudgeSynthesisPrompt(req.Prompt, successfulPanel, analysisHint), "judge_synthesis")
+
+	judgePrompt := buildJudgeSynthesisPrompt(req.Prompt, successfulPanel, analysisHint)
+	if synthesisV2Enabled() {
+		judgePrompt = buildJudgeSynthesisPromptV2(req.Prompt, successfulPanel, analysisHint)
+	}
+	judge := runSelectedModel(ctx, req, judgeSelection, judgePrompt, "judge_synthesis")
 
 	status := judge.Status
 	errText := judge.Error
@@ -167,16 +176,27 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 		status = "failed"
 	}
 
+	finalAnswer := extractFinalOutput(judge.OutputText)
+	synthesisAnalysis := ""
+	if synthesisV2Enabled() {
+		split := extractSynthesisAnalysis(finalAnswer)
+		if split.HasAnalysis {
+			synthesisAnalysis = split.Analysis
+			finalAnswer = split.FinalAnswer
+		}
+	}
+
 	return &Result{
-		RunID:       req.RunID,
-		Status:      status,
-		Mode:        mode,
-		Panel:       panel,
-		Judge:       &judge,
-		FinalAnswer: extractFinalOutput(judge.OutputText),
-		Analysis:    &analysis,
-		Error:       errText,
-		LatencyMs:   time.Since(start).Milliseconds(),
+		RunID:             req.RunID,
+		Status:            status,
+		Mode:              mode,
+		Panel:             panel,
+		Judge:             &judge,
+		FinalAnswer:       finalAnswer,
+		Analysis:          &analysis,
+		SynthesisAnalysis: synthesisAnalysis,
+		Error:             errText,
+		LatencyMs:         time.Since(start).Milliseconds(),
 	}, nil
 }
 
