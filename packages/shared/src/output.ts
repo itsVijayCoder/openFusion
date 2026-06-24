@@ -14,31 +14,21 @@ export function extractReadableOutput(raw: string | undefined): string {
   const fragments: string[] = [];
   for (const line of value.split(/\r?\n/)) {
     const parsed = parseJson(line.trim());
-    if (parsed !== undefined) collectTextFragments(parsed, fragments);
+    if (parsed !== undefined) collectTextFragments(parsed, fragments, 0);
   }
 
   const text = fragments.join("");
   return text.trim() ? text.trim() : value;
 }
 
-function collectTextFragments(value: unknown, fragments: string[]) {
-  if (!value || typeof value !== "object") return;
+function collectTextFragments(value: unknown, fragments: string[], depth: number) {
+  if (!value || typeof value !== "object" || depth > 8) return;
   if (Array.isArray(value)) {
-    for (const item of value) collectTextFragments(item, fragments);
+    for (const item of value) collectTextFragments(item, fragments, depth + 1);
     return;
   }
 
   const record = value as Record<string, unknown>;
-  const part = record.part;
-  if (isRecord(part)) {
-    const partType = stringValue(part.type);
-    const text = stringValue(part.text);
-    if (partType === "text" && text) {
-      fragments.push(text);
-      return;
-    }
-    collectTextFragments(part, fragments);
-  }
 
   const type = stringValue(record.type);
   const text = stringValue(record.text);
@@ -58,10 +48,22 @@ function collectTextFragments(value: unknown, fragments: string[]) {
     return;
   }
 
-  collectTextFragments(record.message, fragments);
-  collectTextFragments(record.delta, fragments);
-  collectTextFragments(record.content, fragments);
-  collectTextFragments(record.data, fragments);
+  const part = record.part;
+  if (isRecord(part)) {
+    const partType = stringValue(part.type);
+    const partText = stringValue(part.text);
+    if (partType === "text" && partText) {
+      fragments.push(partText);
+      return;
+    }
+  }
+
+  for (const key of Object.keys(record)) {
+    const child = record[key];
+    if (child && typeof child === "object") {
+      collectTextFragments(child, fragments, depth + 1);
+    }
+  }
 }
 
 function parseJson(value: string) {

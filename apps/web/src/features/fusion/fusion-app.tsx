@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from "react";
 import { FusionComposer } from "./fusion-composer";
 import { ModelPicker } from "./model-picker";
 import { Sidebar } from "./sidebar";
-import { TopNav } from "./top-nav";
 import type { FusionChat, FusionMode, ModelOption } from "./types";
 import { toModelOption } from "./types";
 import { apiDelete, apiPost, apiUrl, devHeaders } from "@/lib/api";
@@ -198,43 +197,40 @@ export function FusionApp({ models: initialModels = [] }: FusionAppProps) {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-background text-foreground">
-      <TopNav />
-      <div className="flex min-h-0 flex-1">
-        <Sidebar
-          chats={chats}
-          activeChatId={activeChatId}
-          loading={chatsLoading}
-          error={chatsError}
-          onNewFusion={handleNewFusion}
-          onSelectChat={handleSelectChat}
-          onDeleteChat={handleDeleteChat}
-          onRenameChat={handleRenameChat}
-        />
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[680px] px-6 pb-12">
-            {modelsLoading ? (
-              <div className="mt-6 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-                Loading signed-in local models...
-              </div>
-            ) : null}
-            <FusionComposer
-              prompt={prompt}
-              mode={mode}
-              selectedModels={selectedModels}
-              fuseModel={fuseModel}
-              onPromptChange={setPrompt}
-              onModeChange={setMode}
-              onRemoveModel={handleRemoveModel}
-              onAddModel={() => setPickerOpen(true)}
-              onPickFuseModel={() => setFusePickerOpen(true)}
-              onSend={handleSend}
-              sending={sending}
-              error={error ?? modelsError}
-            />
-          </div>
-        </main>
-      </div>
+    <div className="flex min-h-0 flex-1">
+      <Sidebar
+        chats={chats}
+        activeChatId={activeChatId}
+        loading={chatsLoading}
+        error={chatsError}
+        onNewFusion={handleNewFusion}
+        onSelectChat={handleSelectChat}
+        onDeleteChat={handleDeleteChat}
+        onRenameChat={handleRenameChat}
+      />
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-[680px] px-6 pb-12">
+          {modelsLoading ? (
+            <div className="mt-6 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+              Loading signed-in local models...
+            </div>
+          ) : null}
+          <FusionComposer
+            prompt={prompt}
+            mode={mode}
+            selectedModels={selectedModels}
+            fuseModel={fuseModel}
+            onPromptChange={setPrompt}
+            onModeChange={setMode}
+            onRemoveModel={handleRemoveModel}
+            onAddModel={() => setPickerOpen(true)}
+            onPickFuseModel={() => setFusePickerOpen(true)}
+            onSend={handleSend}
+            sending={sending}
+            error={error ?? modelsError}
+          />
+        </div>
+      </main>
       {pickerOpen ? (
         <ModelPicker
           models={models}

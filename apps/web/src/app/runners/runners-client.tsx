@@ -1,11 +1,8 @@
 "use client";
 
-import { RiArrowLeftLine } from "@remixicon/react";
 import type { ModelRef, RunnerRef, ToolKind, ToolRef } from "@openfusion/shared";
-import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { ProviderLogo, providerLabel } from "@/components/provider-logo";
-import { Button } from "@/components/ui/button";
 import { apiUrl, devHeaders } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -242,12 +239,6 @@ export function RunnersClient() {
             <div className="inline-flex min-h-10 w-fit items-center border-b-2 border-primary pr-12 text-sm font-semibold text-foreground">
               Local Agents
             </div>
-            <Button asChild variant="outline" size="sm" className="w-fit rounded-md">
-              <Link href="/chat">
-                <RiArrowLeftLine aria-hidden data-icon="inline-start" />
-              Back to Chat
-              </Link>
-            </Button>
           </div>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
             Fusion Runner ships with the app. Local agents are detected when their CLI is installed on the host and the runner registers its discovery report.

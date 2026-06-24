@@ -29,7 +29,6 @@ import { ModelBadge } from "@/components/model-badge";
 import { OutputDrawer } from "@/components/output-drawer";
 import { StatusPill } from "@/components/product-ui";
 import { Sidebar } from "@/features/fusion/sidebar";
-import { TopNav } from "@/features/fusion/top-nav";
 import type { FusionChat } from "@/features/fusion/types";
 import { apiDelete, apiPost, apiUrl, devHeaders } from "@/lib/api";
 import { formatBytes, formatDateTime } from "@/lib/format";
@@ -408,20 +407,18 @@ export function RunChat({ run }: RunChatProps) {
   const canRetry = currentStatus === "failed" || currentStatus === "cancelled";
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-background text-foreground">
-      <TopNav />
-      <div className="flex min-h-0 flex-1">
-        <Sidebar
-          chats={chats}
-          activeChatId={run.id}
-          loading={chatsLoading}
-          error={chatsError}
-          onNewFusion={handleNewFusion}
-          onSelectChat={handleSelectChat}
-          onDeleteChat={(chatId) => void handleDeleteChat(chatId)}
-          onRenameChat={renameChat}
-        />
-        <main className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1">
+      <Sidebar
+        chats={chats}
+        activeChatId={run.id}
+        loading={chatsLoading}
+        error={chatsError}
+        onNewFusion={handleNewFusion}
+        onSelectChat={handleSelectChat}
+        onDeleteChat={(chatId) => void handleDeleteChat(chatId)}
+        onRenameChat={renameChat}
+      />
+      <main className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               {titleEditing ? (
@@ -613,7 +610,6 @@ export function RunChat({ run }: RunChatProps) {
             </div>
           </div>
         </main>
-      </div>
 
       {showFinalModal ? (
         <FinalOutputModal
@@ -1202,40 +1198,86 @@ function ComparisonOverlay({
   panels: PanelTrace[];
   onClose: () => void;
 }) {
-  const completed = panels.filter((p) => p.text.trim());
-  if (completed.length === 0) return null;
+  const visible = panels.filter((p) => p.text.trim() || p.status === "running");
+  if (visible.length === 0) return null;
+
+  const cols = visible.length <= 2 ? "lg:grid-cols-2" : visible.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4";
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 z-50 flex h-[min(85vh,700px)] w-[min(1200px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
-          <span className="text-sm font-semibold text-foreground">Model Comparison</span>
-          <button
-            onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <RiCloseLine aria-hidden className="size-4" />
-          </button>
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <RiLayoutGridLine aria-hidden className="size-4 text-primary" />
+          <span className="truncate text-sm font-semibold text-foreground">Model Comparison</span>
+          <span className="hidden text-xs text-muted-foreground sm:inline">
+            {visible.length} panel {visible.length === 1 ? "output" : "outputs"} · side by side
+          </span>
         </div>
-        <div className="grid flex-1 grid-cols-1 gap-3 overflow-hidden p-3 md:grid-cols-2 lg:grid-cols-3">
-          {completed.map((panel) => (
-            <div
-              key={panel.jobId}
-              className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
-            >
-              <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-                <ModelBadge adapter={panel.adapter} modelId={panel.modelId} size="sm" />
-                <span className="truncate text-[13px] font-medium text-foreground">{panel.modelId}</span>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4">
-                <MarkdownRenderer content={panel.text} size="lg" />
-              </div>
-            </div>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <RiCloseLine aria-hidden className="size-4" />
+          <span className="hidden sm:inline">Close</span>
+        </button>
       </div>
-    </>
+      <div className={cn("grid flex-1 grid-cols-1 gap-3 overflow-hidden p-3", cols)}>
+        {visible.map((panel) => (
+          <ComparisonColumn key={panel.jobId} panel={panel} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ComparisonColumn({ panel }: { panel: PanelTrace }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(panel.text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // ignore
+    }
+  }
+
+  const isRunning = panel.status === "running";
+
+  return (
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <StatusSpinner status={panel.status} />
+          <ModelBadge adapter={panel.adapter} modelId={panel.modelId} size="sm" />
+          <span className="truncate text-[13px] font-medium text-foreground">{panel.modelId}</span>
+        </div>
+        {panel.text.trim() ? (
+          <button
+            type="button"
+            onClick={handleCopy}
+            title="Copy output"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {copied ? <RiCheckLine aria-hidden className="size-3.5 text-primary" /> : <RiFileList3Line aria-hidden className="size-3.5" />}
+          </button>
+        ) : null}
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {panel.text.trim() ? (
+          <>
+            <MarkdownRenderer content={panel.text} size="lg" />
+            {isRunning ? (
+              <span className="ml-0.5 inline-block h-3.5 w-1 animate-pulse bg-foreground/60 align-middle" />
+            ) : null}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">{isRunning ? "Generating output..." : "No output yet."}</p>
+        )}
+      </div>
+    </div>
   );
 }
 

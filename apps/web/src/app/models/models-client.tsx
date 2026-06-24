@@ -1,11 +1,8 @@
 "use client";
 
 import type { ModelRef } from "@openfusion/shared";
-import { RiArrowLeftLine } from "@remixicon/react";
-import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { ProviderLogo, providerLabel } from "@/components/provider-logo";
-import { Button } from "@/components/ui/button";
 import { apiUrl, devHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -67,12 +64,6 @@ export function ModelsClient() {
             <div className="inline-flex min-h-10 w-fit items-center border-b-2 border-primary pr-12 text-sm font-semibold text-foreground">
               Model Inventory
             </div>
-            <Button asChild variant="outline" size="sm" className="w-fit rounded-md">
-              <Link href="/chat">
-                <RiArrowLeftLine aria-hidden data-icon="inline-start" />
-              Back to Chat
-              </Link>
-            </Button>
           </div>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
             Local CLI sessions, cloud gateway models, aliases, and verified availability are listed with their provider marks.
