@@ -6,7 +6,15 @@ import (
 
 func buildPanelPrompt(userPrompt string, role string) string {
 	_ = role
-	return strings.Join([]string{
+	return buildPanelPromptWithLens(userPrompt, Lens{})
+}
+
+// buildPanelPromptWithLens builds a panel prompt that biases the model's
+// emphasis toward the given lens. The model still gives a full answer; the
+// lens only biases attention, not scope. An empty lens instruction preserves
+// the original generic prompt.
+func buildPanelPromptWithLens(userPrompt string, lens Lens) string {
+	parts := []string{
 		"You are an expert model participating in a multi-model fusion panel.",
 		"",
 		"Original task:",
@@ -16,6 +24,14 @@ func buildPanelPrompt(userPrompt string, role string) string {
 		"- Provide your single best, most complete response to the user's request.",
 		"- Do not split the work or assume other models will cover parts of it.",
 		"- Give your 100% best performance as if you were the only model answering.",
+	}
+	if lens.Instruction != "" {
+		parts = append(parts,
+			"- Emphasize: "+lens.Instruction,
+			"- But still cover the full question — do not ignore other aspects.",
+		)
+	}
+	parts = append(parts,
 		"- Be thorough, concrete, and practical.",
 		"- Include implementation details, code examples, and edge cases where relevant.",
 		"- Highlight risks, trade-offs, and things to be aware of.",
@@ -23,7 +39,8 @@ func buildPanelPrompt(userPrompt string, role string) string {
 		"- Do not claim you ran commands unless tool output proves it.",
 		"",
 		"Return your complete answer in markdown.",
-	}, "\n")
+	)
+	return strings.Join(parts, "\n")
 }
 
 const finalOutputMarker = "FINAL_OUTPUT:"

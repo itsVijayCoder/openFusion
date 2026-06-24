@@ -127,9 +127,14 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 		wg.Add(1)
 		go func(index int, modelID string) {
 			defer wg.Done()
+			lens := Lens{}
 			role := panelRole(index)
+			if !noDiversityMode() {
+				lens = lensForIndex(index)
+				role = lens.Name
+			}
 			selected := resolveModel(modelID, "")
-			panel[index] = runSelectedModel(ctx, req, selected, buildPanelPrompt(req.Prompt, role), role)
+			panel[index] = runSelectedModel(ctx, req, selected, buildPanelPromptWithLens(req.Prompt, lens), role)
 		}(index, modelID)
 	}
 	wg.Wait()

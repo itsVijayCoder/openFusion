@@ -444,7 +444,10 @@ const indexHTML = `<!doctype html>
     }
     function traceItem(output) {
       if (!output) return '';
-      return '<div class="trace-item"><div class="trace-title"><span>' + output.role + ' · ' + output.modelId + '</span><span>' + output.status + '</span></div><div class="trace-meta">' + output.adapter + ' · ' + (output.latencyMs || 0) + 'ms</div>' + (output.error ? '<div class="trace-error">' + output.error + '</div>' : '') + '</div>';
+      let roleLabel = output.role || '';
+      const knownLenses = ['correctness','performance','security','maintainability','pragmatism'];
+      if (knownLenses.includes(roleLabel)) roleLabel = 'lens: ' + roleLabel;
+      return '<div class="trace-item"><div class="trace-title"><span>' + roleLabel + ' · ' + output.modelId + '</span><span>' + output.status + '</span></div><div class="trace-meta">' + output.adapter + ' · ' + (output.latencyMs || 0) + 'ms</div>' + (output.error ? '<div class="trace-error">' + output.error + '</div>' : '') + '</div>';
     }
     function confidenceBadge(confidence) {
       const label = confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low';

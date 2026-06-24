@@ -2,9 +2,33 @@ import type { JudgeResult } from "./judge";
 
 export const finalOutputMarker = "FINAL_OUTPUT:";
 
+export type Lens = {
+  name: string;
+  instruction: string;
+};
+
+export const panelLenses: Lens[] = [
+  { name: "correctness", instruction: "Emphasize correctness, edge cases, error handling, and failure modes." },
+  { name: "performance", instruction: "Emphasize performance, scalability, latency, and resource use." },
+  { name: "security", instruction: "Emphasize security, attack surface, data exposure, and permission boundaries." },
+  { name: "maintainability", instruction: "Emphasize readability, simplicity, conventions, and long-term maintainability." },
+  { name: "pragmatism", instruction: "Emphasize the simplest working solution that ships now, with clear trade-offs." },
+];
+
+export function lensForIndex(index: number): Lens {
+  if (panelLenses.length === 0) {
+    return { name: "general", instruction: "Give your full best answer." };
+  }
+  return panelLenses[index % panelLenses.length];
+}
+
 export function buildPanelPrompt(userPrompt: string, role: string) {
   void role;
-  return [
+  return buildPanelPromptWithLens(userPrompt, { name: "", instruction: "" });
+}
+
+export function buildPanelPromptWithLens(userPrompt: string, lens: Lens) {
+  const parts: string[] = [
     "You are an expert model participating in a multi-model fusion panel.",
     "",
     "Original task:",
@@ -14,6 +38,14 @@ export function buildPanelPrompt(userPrompt: string, role: string) {
     "- Provide your single best, most complete response to the user's request.",
     "- Do not split the work or assume other models will cover parts of it.",
     "- Give your 100% best performance as if you were the only model answering.",
+  ];
+  if (lens.instruction) {
+    parts.push(
+      `- Emphasize: ${lens.instruction}`,
+      "- But still cover the full question — do not ignore other aspects.",
+    );
+  }
+  parts.push(
     "- Be thorough, concrete, and practical.",
     "- Include implementation details, code examples, and edge cases where relevant.",
     "- Highlight risks, trade-offs, and things to be aware of.",
@@ -21,7 +53,8 @@ export function buildPanelPrompt(userPrompt: string, role: string) {
     "- Do not claim you ran commands unless tool output proves it.",
     "",
     "Return your complete answer in markdown.",
-  ].join("\n");
+  );
+  return parts.join("\n");
 }
 
 export function buildJudgeSynthesisPrompt(
