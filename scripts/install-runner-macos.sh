@@ -223,7 +223,9 @@ cat > "$plist_path" <<PLIST
 PLIST
 
 uid="$(id -u)"
+launchctl bootout "gui/$uid/$label" >/dev/null 2>&1 || true
 launchctl bootout "gui/$uid" "$plist_path" >/dev/null 2>&1 || true
+launchctl remove "$label" >/dev/null 2>&1 || true
 
 if [[ "$foreground" -eq 1 ]]; then
   cat <<SUMMARY

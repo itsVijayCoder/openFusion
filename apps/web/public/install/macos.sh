@@ -13,6 +13,7 @@ runner_id=""
 install_dir="${FUSION_RUNNER_INSTALL_DIR:-$HOME/.openfusion/bin}"
 symlink_dir="${FUSION_RUNNER_SYMLINK_DIR:-$HOME/.local/bin}"
 start_service=1
+foreground=0
 allowed_roots=()
 
 usage() {
@@ -31,7 +32,8 @@ Options:
   --allowed-root DIR     Workspace root the runner may use. Repeatable.
   --install-dir DIR      Binary install directory. Defaults to ~/.openfusion/bin.
   --symlink-dir DIR      Directory for fusion-runner symlink. Defaults to ~/.local/bin.
-  --no-start             Install files without starting the LaunchAgent.
+--no-start             Install files without starting the LaunchAgent.
+  --foreground           Run the runner in the foreground instead of a LaunchAgent.
   -h, --help             Show this help.
 USAGE
 }
@@ -81,6 +83,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --no-start)
+      start_service=0
+      shift
+      ;;
+    --foreground)
+      foreground=1
       start_service=0
       shift
       ;;
@@ -162,6 +169,8 @@ fi
 install -m 0755 "$download_tmp" "$binary_path"
 rm -f "$download_tmp"
 trap - EXIT
+
+xattr -d com.apple.quarantine "$binary_path" 2>/dev/null || true
 
 ln -sf "$binary_path" "$symlink_dir/fusion-runner"
 
@@ -247,12 +256,40 @@ cat > "$plist_path" <<PLIST
 PLIST
 
 uid="$(id -u)"
+launchctl bootout "gui/$uid/$label" >/dev/null 2>&1 || true
 launchctl bootout "gui/$uid" "$plist_path" >/dev/null 2>&1 || true
+launchctl remove "$label" >/dev/null 2>&1 || true
+
+if [[ "$foreground" -eq 1 ]]; then
+  cat <<SUMMARY
+Fusion Runner installed (foreground mode).
+
+Binary:  $binary_path
+Command: $symlink_dir/fusion-runner
+Config:  $config_dir/config.json
+Logs:    $log_dir/runner.out.log
+          $log_dir/runner.err.log
+
+Runner ID: $runner_id
+Cloud URL: $cloud_url
+
+Starting in foreground. Press Ctrl+C to stop.
+SUMMARY
+  exec "$binary_path" serve --cloud-url "$cloud_url"
+fi
 
 if [[ "$start_service" -eq 1 ]]; then
-  launchctl bootstrap "gui/$uid" "$plist_path"
-  launchctl enable "gui/$uid/$label" >/dev/null 2>&1 || true
-  launchctl kickstart -k "gui/$uid/$label" >/dev/null 2>&1 || true
+  if launchctl bootstrap "gui/$uid" "$plist_path" 2>"$log_dir/bootstrap.err.log"; then
+    launchctl enable "gui/$uid/$label" >/dev/null 2>&1 || true
+    launchctl kickstart -k "gui/$uid/$label" >/dev/null 2>&1 || true
+  else
+    echo "LaunchAgent bootstrap failed; falling back to foreground mode." >&2
+    echo "The runner will stay active in this terminal. Press Ctrl+C to stop." >&2
+    echo "To use a LaunchAgent instead, remove the stale agent with:" >&2
+    echo "  launchctl bootout gui/$uid/$label 2>/dev/null; rm -f \"$plist_path\"" >&2
+    echo "" >&2
+    exec "$binary_path" serve --cloud-url "$cloud_url"
+  fi
 fi
 
 cat <<SUMMARY
