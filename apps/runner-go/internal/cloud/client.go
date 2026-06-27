@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -78,7 +80,7 @@ func NewClient(baseURL string, token string) Client {
 		BaseURL: strings.TrimRight(baseURL, "/"),
 		Token:   token,
 		HTTPClient: &http.Client{
-			Timeout: 20 * time.Second,
+			Timeout: 60 * time.Second,
 		},
 	}
 }
@@ -102,6 +104,10 @@ func (client Client) ClaimJob(ctx context.Context, runnerID string, leaseOwner s
 		return nil, err
 	}
 	return body.Job, nil
+}
+
+func (client Client) ConnectURL(runnerID string) string {
+	return client.BaseURL + "/api/runners/" + runnerID + "/connect"
 }
 
 func (client Client) GetJobState(ctx context.Context, runnerID string, jobID string) (JobState, error) {
@@ -143,26 +149,7 @@ func (client Client) getJSON(ctx context.Context, path string, target any) error
 		req.Header.Set("authorization", "Bearer "+client.Token)
 	}
 
-	resp, err := client.HTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		if len(responseBody) > 0 {
-			return fmt.Errorf("cloud request failed with status %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
-		}
-		return fmt.Errorf("cloud request failed with status %s", resp.Status)
-	}
-
-	if target != nil {
-		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
-			return err
-		}
-	}
-	return nil
+	return client.doWithRetry(req, target)
 }
 
 func (client Client) postJSON(ctx context.Context, path string, payload any, target any) error {
@@ -180,24 +167,83 @@ func (client Client) postJSON(ctx context.Context, path string, payload any, tar
 		req.Header.Set("authorization", "Bearer "+client.Token)
 	}
 
-	resp, err := client.HTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+	return client.doWithRetry(req, target)
+}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		if len(responseBody) > 0 {
-			return fmt.Errorf("cloud request failed with status %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
+func (client Client) doWithRetry(req *http.Request, target any) error {
+	const maxAttempts = 3
+	var lastErr error
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			body := req.GetBody
+			if body != nil {
+				r, err := body()
+				if err != nil {
+					return err
+				}
+				req.Body = r
+			}
+			select {
+			case <-req.Context().Done():
+				return req.Context().Err()
+			case <-time.After(backoff(attempt)):
+			}
 		}
-		return fmt.Errorf("cloud request failed with status %s", resp.Status)
-	}
 
-	if target != nil {
-		if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		resp, err := client.HTTPClient.Do(req)
+		if err != nil {
+			lastErr = err
+			if isRetryable(err) && attempt < maxAttempts-1 {
+				continue
+			}
 			return err
 		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+			if len(responseBody) > 0 {
+				return fmt.Errorf("cloud request failed with status %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
+			}
+			return fmt.Errorf("cloud request failed with status %s", resp.Status)
+		}
+
+		if target != nil {
+			if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+				resp.Body.Close()
+				return err
+			}
+		}
+		resp.Body.Close()
+		return nil
 	}
-	return nil
+
+	return lastErr
+}
+
+func backoff(attempt int) time.Duration {
+	switch attempt {
+	case 1:
+		return 500 * time.Millisecond
+	case 2:
+		return 2 * time.Second
+	default:
+		return 5 * time.Second
+	}
+}
+
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	return true
 }

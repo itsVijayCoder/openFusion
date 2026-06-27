@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -238,7 +239,18 @@ func runServe(args []string) error {
 	}
 
 	go heartbeatLoop(ctx, client, cfg.RunnerID, *interval)
-	return jobClaimLoop(ctx, client, cfg, *pollInterval, *leaseSeconds)
+
+	stream := cloud.NewStream(client, cfg.RunnerID)
+	jobExecutor := func(jctx context.Context, job cloud.ClaimedJob) error {
+		return executeCloudJob(jctx, client, cfg, job)
+	}
+
+	go fallbackPollLoop(ctx, client, cfg, *pollInterval, *leaseSeconds, stream)
+
+	if err := stream.Run(ctx, jobExecutor); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
 }
 
 func heartbeatLoop(ctx context.Context, client cloud.Client, runnerID string, interval time.Duration) {
@@ -257,7 +269,7 @@ func heartbeatLoop(ctx context.Context, client cloud.Client, runnerID string, in
 	}
 }
 
-func jobClaimLoop(ctx context.Context, client cloud.Client, cfg config.Config, pollInterval time.Duration, leaseSeconds int) error {
+func fallbackPollLoop(ctx context.Context, client cloud.Client, cfg config.Config, pollInterval time.Duration, leaseSeconds int, stream *cloud.Stream) {
 	if pollInterval <= 0 {
 		pollInterval = 2 * time.Second
 	}
@@ -265,13 +277,14 @@ func jobClaimLoop(ctx context.Context, client cloud.Client, cfg config.Config, p
 		leaseSeconds = 300
 	}
 
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+
 		job, err := client.ClaimJob(ctx, cfg.RunnerID, cfg.RunnerID, leaseSeconds)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "job claim failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "fallback poll failed: %v\n", err)
 		} else if job != nil {
 			if err := executeCloudJob(ctx, client, cfg, *job); err != nil {
 				fmt.Fprintf(os.Stderr, "job %s failed: %v\n", job.ID, err)
@@ -279,10 +292,14 @@ func jobClaimLoop(ctx context.Context, client cloud.Client, cfg config.Config, p
 			continue
 		}
 
+		delay := pollInterval
+		if stream.Connected() {
+			delay = 30 * time.Second
+		}
 		select {
 		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
+			return
+		case <-time.After(delay):
 		}
 	}
 }

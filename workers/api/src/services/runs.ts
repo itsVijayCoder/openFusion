@@ -1259,7 +1259,7 @@ function fallbackTitle(text: string): string {
   return `${firstLine.slice(0, 57).trim()}...`;
 }
 
-async function appendRunEvent(env: Env, orgId: string, event: RunnerEvent) {
+export async function appendRunEvent(env: Env, orgId: string, event: RunnerEvent) {
   const response = await notifyFusionRunObject(env, event.runId, "/runner-event", event);
   return persistSequencedEvent(env, orgId, response);
 }

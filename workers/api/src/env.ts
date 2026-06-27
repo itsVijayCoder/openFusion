@@ -1,3 +1,5 @@
+import type { JobWorkMessage } from "./services/job-work";
+
 export type Env = {
   DB: D1Database;
   CONFIG_KV: KVNamespace;
@@ -6,6 +8,7 @@ export type Env = {
   FUSION_RUN: DurableObjectNamespace;
   RUNNER_SESSION: DurableObjectNamespace;
   FUSION_WORKFLOW: unknown;
+  JOB_WORK: Queue<JobWorkMessage>;
   ENVIRONMENT: string;
   PUBLIC_APP_URL: string;
   AUTH_DEV_LOGIN_ENABLED?: string;

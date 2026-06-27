@@ -1,8 +1,5 @@
 import {
-  completeRunnerJob,
-  createArtifact,
   createAuditEvent,
-  createRunEvent,
   deleteRunner,
   ensurePrincipal,
   getFusionRun,
@@ -15,24 +12,20 @@ import {
   updatePanelOutput,
 } from "@openfusion/db";
 import {
-  type ArtifactKind,
   formatEntityId,
   runnerEventSchema,
   runnerJobCompletionSchema,
   runnerRegistrationRequestSchema,
   type ClaimedRunnerJob,
-  type RunEvent,
   type RunnerEvent,
-  type RunnerJob,
-  type RunnerJobKind,
   type RunnerJobStatus,
 } from "@openfusion/shared";
 import { Hono } from "hono";
-import type { AppBindings, Env } from "../env";
-import { buildArtifactKey } from "../services/artifact-store";
+import type { AppBindings } from "../env";
 import { getOptionalAccessIdentity, requireAccessIdentity, requireRunnerAccessIdentity } from "../services/auth";
+import { type JobWorkMessage } from "../services/job-work";
 import { notifyRunnerSessionObject } from "../services/runner-session";
-import { advanceFusionRunAfterJob, notifyFusionRunObject } from "../services/runs";
+import { appendRunEvent } from "../services/runs";
 
 export const runnerRoutes = new Hono<AppBindings>()
   .get("/", async (c) => {
@@ -162,7 +155,7 @@ export const runnerRoutes = new Hono<AppBindings>()
     }
     if (leasedJob.kind === "panel") {
       await updatePanelOutput(c.env.DB, {
-        id: panelOutputId(leasedJob.id),
+        id: formatEntityId("panel", leasedJob.id),
         status: "running",
       });
     }
@@ -200,6 +193,9 @@ export const runnerRoutes = new Hono<AppBindings>()
     };
 
     const persisted = await appendRunEvent(c.env, principal.orgId, normalizedEvent);
+    if (!persisted) {
+      return c.json({ error: "Fusion run durable object did not return a sequenced event" }, 502);
+    }
     return c.json({ status: "accepted", event: persisted }, 202);
   })
   .post("/:id/jobs/:jobId/complete", async (c) => {
@@ -207,181 +203,57 @@ export const runnerRoutes = new Hono<AppBindings>()
     const runnerId = c.req.param("id");
     const jobId = c.req.param("jobId");
     const body = runnerJobCompletionSchema.parse(await c.req.json().catch(() => ({ status: "completed" })));
-    const status = body.status === "completed" ? "completed" : body.status;
-    const result = await finishRunnerJob(c.env, principal.orgId, runnerId, jobId, status, body);
+    const status: Extract<RunnerJobStatus, "completed" | "failed" | "timeout" | "cancelled"> =
+      body.status === "completed" ? "completed" : body.status;
 
-    if (!result.job) {
-      return c.json({ error: "Runner job not found" }, 404);
-    }
+    await c.env.JOB_WORK.send({
+      kind: "complete",
+      orgId: principal.orgId,
+      runnerId,
+      jobId,
+      status,
+      outputText: body.outputText,
+      error: body.error,
+      latencyMs: body.latencyMs,
+      usage: body.usage,
+      artifactKeys: body.artifactKeys,
+    } satisfies JobWorkMessage);
 
-    return c.json({ job: result.job, event: result.event }, 202);
+    return c.json({ status: "accepted", jobId }, 202);
   })
   .post("/:id/jobs/:jobId/fail", async (c) => {
     const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
     const runnerId = c.req.param("id");
     const jobId = c.req.param("jobId");
     const body = runnerJobCompletionSchema.parse(await c.req.json().catch(() => ({ status: "failed" })));
-    const status = body.status === "completed" ? "failed" : body.status;
-    const result = await finishRunnerJob(c.env, principal.orgId, runnerId, jobId, status, body);
+    const status: Extract<RunnerJobStatus, "completed" | "failed" | "timeout" | "cancelled"> =
+      body.status === "completed" ? "failed" : body.status;
 
-    if (!result.job) {
-      return c.json({ error: "Runner job not found" }, 404);
-    }
-
-    return c.json({ job: result.job, event: result.event }, 202);
-  });
-
-async function finishRunnerJob(
-  env: Env,
-  orgId: string,
-  runnerId: string,
-  jobId: string,
-  status: Extract<RunnerJobStatus, "completed" | "failed" | "timeout" | "cancelled">,
-  body: {
-    outputObjectKey?: string;
-    outputText?: string;
-    error?: string;
-    latencyMs?: number;
-    usage?: Record<string, unknown>;
-    artifactKeys?: string[];
-  },
-): Promise<{ job: RunnerJob | null; event?: RunEvent }> {
-  const existingJob = await getRunnerJob(env.DB, orgId, runnerId, jobId);
-  if (!existingJob) {
-    return { job: null };
-  }
-
-  const now = new Date().toISOString();
-  const outputObjectKey = body.outputObjectKey ?? (await persistJobOutput(env, orgId, existingJob, body.outputText));
-  const job = await completeRunnerJob(env.DB, {
-    orgId,
-    runnerId,
-    jobId,
-    status,
-    outputObjectKey,
-    error: body.error,
-    completedAt: now,
-  });
-  if (existingJob.kind === "panel") {
-    await updatePanelOutput(env.DB, {
-      id: panelOutputId(jobId),
-      status: status === "completed" ? "completed" : status,
-      outputObjectKey,
-      error: body.error,
-      latencyMs: body.latencyMs,
-      usage: body.usage,
-      completedAt: now,
-    });
-  }
-
-  await notifyRunnerSessionObject(env, runnerId, `/jobs/${encodeURIComponent(jobId)}/${status === "completed" ? "complete" : "fail"}`, {
-    status,
-  });
-
-  const event = await appendRunEvent(env, orgId, {
-    type: completionEventType(existingJob.kind, status),
-    runId: existingJob.runId,
-    jobId,
-    runnerId,
-    timestamp: now,
-    data: {
+    await c.env.JOB_WORK.send({
+      kind: "complete",
+      orgId: principal.orgId,
+      runnerId,
+      jobId,
       status,
-      outputObjectKey,
       outputText: body.outputText,
       error: body.error,
       latencyMs: body.latencyMs,
       usage: body.usage,
       artifactKeys: body.artifactKeys,
-    },
+    } satisfies JobWorkMessage);
+
+    return c.json({ status: "accepted", jobId }, 202);
+  })
+  .get("/:id/connect", async (c) => {
+    if (c.req.raw.headers.get("upgrade") !== "websocket") {
+      return c.json({ error: "WebSocket upgrade required" }, 426);
+    }
+    const principal = await requireRunnerAccessIdentity(c.env.DB, c.env, c.req.raw.headers);
+    const runnerId = c.req.param("id");
+    const id = c.env.RUNNER_SESSION.idFromName(runnerId);
+    const headers = new Headers(c.req.raw.headers);
+    headers.set("x-fusion-org-id", principal.orgId);
+    headers.set("x-fusion-runner-id", runnerId);
+    const upgradeRequest = new Request(c.req.raw.url, { method: c.req.raw.method, headers });
+    return c.env.RUNNER_SESSION.get(id).fetch(upgradeRequest);
   });
-
-  if (job) {
-    await advanceFusionRunAfterJob(env, orgId, job, now);
-  }
-
-  return { job, event };
-}
-
-async function persistJobOutput(env: Env, orgId: string, job: RunnerJob, outputText: string | undefined) {
-  if (!env.ARTIFACTS || !outputText) {
-    return undefined;
-  }
-
-  const kind = artifactKindForJob(job.kind);
-  const objectKey = buildArtifactKey(orgId, job.runId, `${kind}/${job.id}.txt`);
-  await env.ARTIFACTS.put(objectKey, outputText, {
-    httpMetadata: {
-      contentType: "text/plain; charset=utf-8",
-    },
-  });
-  await createArtifact(env.DB, {
-    id: formatEntityId("artifact", crypto.randomUUID()),
-    orgId,
-    runId: job.runId,
-    kind,
-    objectKey,
-    contentType: "text/plain; charset=utf-8",
-    sizeBytes: new TextEncoder().encode(outputText).byteLength,
-    createdAt: new Date().toISOString(),
-  });
-  return objectKey;
-}
-
-function artifactKindForJob(kind: RunnerJobKind): ArtifactKind {
-  if (kind === "judge") return "judge";
-  if (kind === "final" || kind === "direct") return "final";
-  return "panel_output";
-}
-
-function panelOutputId(jobId: string) {
-  return formatEntityId("panel", jobId);
-}
-
-async function appendRunEvent(env: Env, orgId: string, event: RunnerEvent) {
-  const response = await notifyFusionRunObject(env, event.runId, "/runner-event", event);
-  const body = (await response.json().catch(() => ({}))) as { event?: RunEvent };
-
-  if (!body.event) {
-    throw new Error("Fusion run durable object did not return a sequenced event");
-  }
-
-  await createRunEvent(env.DB, {
-    id: formatEntityId("event", crypto.randomUUID()),
-    orgId,
-    runId: body.event.runId,
-    seq: body.event.seq,
-    type: body.event.type,
-    jobId: body.event.jobId,
-    runnerId: body.event.runnerId,
-    payload: body.event,
-    createdAt: body.event.timestamp,
-  });
-
-  return body.event;
-}
-
-function completionEventType(
-  kind: RunnerJobKind,
-  status: Extract<RunnerJobStatus, "completed" | "failed" | "timeout" | "cancelled">,
-): RunEvent["type"] {
-  if (status === "cancelled" && (kind === "direct" || kind === "final" || kind === "judge")) {
-    return "run.cancelled";
-  }
-  if (status !== "completed") {
-    if (kind === "judge") return "judge.failed";
-    if (kind === "final" || kind === "direct") return "run.failed";
-    return "panel.job.failed";
-  }
-
-  switch (kind) {
-    case "judge":
-      return "judge.completed";
-    case "final":
-    case "direct":
-      return "final.completed";
-    case "command":
-      return "command.completed";
-    default:
-      return "panel.job.completed";
-  }
-}

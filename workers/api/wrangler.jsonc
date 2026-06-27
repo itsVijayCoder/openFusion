@@ -46,6 +46,21 @@
       }
     ]
   },
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOB_WORK",
+        "queue": "fusion-job-work"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "fusion-job-work",
+        "max_batch_size": 1,
+        "max_retries": 3
+      }
+    ]
+  },
   "migrations": [
     {
       "tag": "v1",

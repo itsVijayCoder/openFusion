@@ -226,6 +226,7 @@ uid="$(id -u)"
 launchctl bootout "gui/$uid/$label" >/dev/null 2>&1 || true
 launchctl bootout "gui/$uid" "$plist_path" >/dev/null 2>&1 || true
 launchctl remove "$label" >/dev/null 2>&1 || true
+sleep 1
 
 if [[ "$foreground" -eq 1 ]]; then
   cat <<SUMMARY
@@ -249,8 +250,14 @@ if [[ "$start_service" -eq 1 ]]; then
   if launchctl bootstrap "gui/$uid" "$plist_path" 2>"$log_dir/bootstrap.err.log"; then
     launchctl enable "gui/$uid/$label" >/dev/null 2>&1 || true
     launchctl kickstart -k "gui/$uid/$label" >/dev/null 2>&1 || true
+  elif launchctl load -w "$plist_path" 2>>"$log_dir/bootstrap.err.log"; then
+    launchctl enable "gui/$uid/$label" >/dev/null 2>&1 || true
+    launchctl kickstart -k "gui/$uid/$label" >/dev/null 2>&1 || true
   else
     echo "LaunchAgent bootstrap failed; falling back to foreground mode." >&2
+    if [[ -s "$log_dir/bootstrap.err.log" ]]; then
+      echo "  reason: $(cat "$log_dir/bootstrap.err.log")" >&2
+    fi
     echo "The runner will stay active in this terminal. Press Ctrl+C to stop." >&2
     exec "$binary_path" serve --cloud-url "$cloud_url"
   fi

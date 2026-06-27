@@ -12,6 +12,7 @@ import { openAiRoutes } from "./routes/openai-compatible";
 import { runnerRoutes } from "./routes/runners";
 import { workspaceRoutes } from "./routes/workspaces";
 import { AuthenticationError } from "./services/auth";
+import { processJobWork, type JobWorkMessage } from "./services/job-work";
 import type { AppBindings } from "./env";
 
 const app = new Hono<AppBindings>();
@@ -77,10 +78,29 @@ app.onError((error, c) => {
   return c.json({ error: "Internal server error", detail: error.message }, 500);
 });
 
-export default app;
 export { FusionRunDO } from "./durable-objects/FusionRunDO";
 export { RunnerSessionDO } from "./durable-objects/RunnerSessionDO";
 export { FusionWorkflow } from "./workflows/FusionWorkflow";
+
+export default {
+  fetch: (request: Request, env: AppBindings["Bindings"], ctx: ExecutionContext) => app.fetch(request, env, ctx),
+  async queue(batch: MessageBatch<JobWorkMessage>, env: AppBindings["Bindings"]): Promise<void> {
+    for (const message of batch.messages) {
+      try {
+        await processJobWork(env, message.body);
+        message.ack();
+      } catch (error) {
+        console.error(JSON.stringify({
+          level: "error",
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : "QueueError",
+          path: "queue:JOB_WORK",
+        }));
+        message.retry();
+      }
+    }
+  },
+};
 
 function allowedOrigin(origin: string | undefined, publicAppUrl: string) {
   if (!origin) return publicAppUrl;
