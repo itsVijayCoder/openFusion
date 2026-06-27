@@ -25,6 +25,7 @@ import (
 	"github.com/asthrix/openfusion/apps/runner-go/internal/fusion"
 	"github.com/asthrix/openfusion/apps/runner-go/internal/localagents"
 	"github.com/asthrix/openfusion/apps/runner-go/internal/localui"
+	"github.com/asthrix/openfusion/apps/runner-go/internal/terminal"
 )
 
 const version = "0.1.0"
@@ -585,6 +586,7 @@ func runFuse(ctx context.Context, args []string) error {
 	permissionProfile := flags.String("permission-profile", "", "readonly, workspace_write, or trusted_internal")
 	timeout := flags.Duration("timeout", 10*time.Minute, "per-model timeout")
 	asJSON := flags.Bool("json", false, "write full JSON output")
+	terminalMode := flags.String("terminal", "native", "terminal execution mode: native, json, or headless")
 	var analysisModels stringListFlag
 	flags.Var(&analysisModels, "analysis-model", "analysis model id; repeat for multiple panel models")
 	if err := flags.Parse(args); err != nil {
@@ -609,6 +611,21 @@ func runFuse(ctx context.Context, args []string) error {
 	if profile == "" {
 		profile = cfg.DefaultProfile
 	}
+
+	var sessionMgr *terminal.SessionManager
+	if *terminalMode != "headless" {
+		sessionMgr = terminal.NewSessionManager(terminal.DefaultResourceLimits(), nil)
+		if !sessionMgr.Available() {
+			fmt.Fprintf(os.Stderr, "warning: PTY not available on this platform, falling back to headless mode\n")
+			sessionMgr = nil
+		}
+	}
+	defer func() {
+		if sessionMgr != nil {
+			sessionMgr.KillAll()
+		}
+	}()
+
 	result, err := fusion.Execute(ctx, fusion.Request{
 		Prompt:            promptText,
 		WorkspacePath:     *workspaceDir,
@@ -620,6 +637,7 @@ func runFuse(ctx context.Context, args []string) error {
 		TimeoutMs:         int(timeout.Milliseconds()),
 		AllowedRoots:      allowedRootsWithWorkspace(cfg.AllowedRoots, *workspaceDir),
 		ToolDirs:          cfg.ToolDirs,
+		SessionManager:    sessionMgr,
 	})
 	if err != nil {
 		return err
@@ -645,6 +663,7 @@ func runUI(args []string) error {
 	workspaceDir := flags.String("workspace", "", "default workspace directory")
 	permissionProfile := flags.String("permission-profile", "", "readonly, workspace_write, or trusted_internal")
 	timeout := flags.Duration("timeout", 10*time.Minute, "per-model timeout")
+	terminalMode := flags.String("terminal", "native", "terminal execution mode: native, json, or headless")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -653,8 +672,23 @@ func runUI(args []string) error {
 		return err
 	}
 	cfg.AllowedRoots = allowedRootsWithWorkspace(cfg.AllowedRoots, *workspaceDir)
+
+	var sessionMgr *terminal.SessionManager
+	if *terminalMode != "headless" {
+		sessionMgr = terminal.NewSessionManager(terminal.DefaultResourceLimits(), nil)
+		if !sessionMgr.Available() {
+			fmt.Fprintf(os.Stderr, "warning: PTY not available on this platform, falling back to headless mode\n")
+			sessionMgr = nil
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	defer func() {
+		if sessionMgr != nil {
+			sessionMgr.KillAll()
+		}
+	}()
 	fmt.Printf("Open %s in your browser\n", localui.FormatAddress(*address))
 	return localui.Serve(ctx, localui.Options{
 		Address:           *address,
@@ -662,6 +696,7 @@ func runUI(args []string) error {
 		PermissionProfile: *permissionProfile,
 		Timeout:           *timeout,
 		Config:            cfg,
+		SessionManager:    sessionMgr,
 	})
 }
 

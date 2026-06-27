@@ -26,6 +26,20 @@ type AgentDef struct {
 	FetchModels      func(ctx context.Context, def AgentDef, path string, allowedRoots []string) ([]ModelOption, error)
 	FallbackModels   []ModelOption
 	Provider         string
+	TerminalSpec     TerminalSpecHint
+}
+
+// TerminalSpecHint declares how a CLI should be launched in a real PTY
+// terminal session. This makes any catalogued agent executable without
+// per-CLI Go code.
+type TerminalSpecHint struct {
+	PromptMode     adapters.PromptMode
+	PromptFlag     string
+	ModelFlag      string
+	OutputMode     adapters.OutputMode
+	JSONRunArgs    []string
+	ChromePatterns []string
+	ReadyDelayMs   int
 }
 
 type ModelOption struct {
@@ -36,6 +50,16 @@ type ModelOption struct {
 
 func Catalog() []AgentDef {
 	return append(baseCatalog(), readLocalAgentProfiles(baseCatalog())...)
+}
+
+// FindByID returns the AgentDef with the given ID, or nil if not found.
+func FindByID(id string) *AgentDef {
+	for _, def := range Catalog() {
+		if def.ID == id {
+			return &def
+		}
+	}
+	return nil
 }
 
 func baseCatalog() []AgentDef {
@@ -56,6 +80,12 @@ func baseCatalog() []AgentDef {
 				"deepseek/deepseek-chat",
 				"moonshotai/kimi-k2",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:  adapters.PromptModeStdin,
+				ModelFlag:   "--model",
+				OutputMode:  adapters.OutputModeJSON,
+				JSONRunArgs: []string{"run", "--format", "json", "-"},
+			},
 		},
 		{
 			ID:               "claude",
@@ -73,6 +103,12 @@ func baseCatalog() []AgentDef {
 				"claude-sonnet-4-5",
 				"claude-haiku-4-5",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				ModelFlag:    "--model",
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:               "codex",
@@ -95,6 +131,12 @@ func baseCatalog() []AgentDef {
 				"o3",
 				"o4-mini",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:  adapters.PromptModeStdin,
+				ModelFlag:   "--model",
+				OutputMode:  adapters.OutputModeJSON,
+				JSONRunArgs: []string{"exec", "--json", "--skip-git-repo-check", "--sandbox", "workspace-write", "-"},
+			},
 		},
 		{
 			ID:             "cursor-agent",
@@ -104,6 +146,11 @@ func baseCatalog() []AgentDef {
 			VersionArgs:    []string{"--version"},
 			ListModelsArgs: []string{"models"},
 			FallbackModels: models("auto", "sonnet-4", "sonnet-4-thinking", "gpt-5"),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "gemini",
@@ -119,6 +166,12 @@ func baseCatalog() []AgentDef {
 				"gemini-2.5-flash",
 				"gemini-2.5-flash-lite",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				ModelFlag:    "--model",
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "qwen",
@@ -131,6 +184,12 @@ func baseCatalog() []AgentDef {
 				"qwen3-coder-plus",
 				"qwen3-coder-flash",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				ModelFlag:    "--model",
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "qoder",
@@ -145,6 +204,11 @@ func baseCatalog() []AgentDef {
 				model("performance", "Performance"),
 				model("ultimate", "Ultimate"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "copilot",
@@ -156,6 +220,11 @@ func baseCatalog() []AgentDef {
 				model("claude-sonnet-4.6", "Claude Sonnet 4.6"),
 				model("gpt-5.2", "GPT-5.2"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:               "deepseek",
@@ -166,6 +235,12 @@ func baseCatalog() []AgentDef {
 			VersionArgs:      []string{"--version"},
 			Provider:         "deepseek",
 			FallbackModels:   models("deepseek-v4-pro", "deepseek-v4-flash"),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				ModelFlag:    "--model",
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "kimi",
@@ -179,6 +254,12 @@ func baseCatalog() []AgentDef {
 				"moonshot-v1-8k",
 				"moonshot-v1-32k",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				ModelFlag:    "--model",
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "hermes",
@@ -192,6 +273,11 @@ func baseCatalog() []AgentDef {
 				model("openai-codex:gpt-5.5", "gpt-5.5 (openai-codex)"),
 				model("openai-codex:gpt-5.4", "gpt-5.4 (openai-codex)"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "pi",
@@ -208,6 +294,12 @@ func baseCatalog() []AgentDef {
 				"google/gemini-2.5-pro",
 				"google/gemini-2.5-flash",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode: adapters.PromptModeFlag,
+				PromptFlag: "-p",
+				ModelFlag:  "--model",
+				OutputMode: adapters.OutputModeNative,
+			},
 		},
 		{
 			ID:          "aider",
@@ -221,6 +313,13 @@ func baseCatalog() []AgentDef {
 				"deepseek/deepseek-chat",
 				"gemini/gemini-2.0-flash",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:  adapters.PromptModeFlag,
+				PromptFlag:  "--message",
+				ModelFlag:   "--model",
+				OutputMode:  adapters.OutputModeNative,
+				JSONRunArgs: []string{"--no-auto-commits"},
+			},
 		},
 		{
 			ID:          "devin",
@@ -238,6 +337,11 @@ func baseCatalog() []AgentDef {
 				"gpt",
 				"gemini",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:             "grok-build",
@@ -254,6 +358,12 @@ func baseCatalog() []AgentDef {
 				"grok-4.20-non-reasoning",
 				"grok-4.20-multi-agent",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				ModelFlag:    "--model",
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "amp",
@@ -266,6 +376,11 @@ func baseCatalog() []AgentDef {
 				model("deep", "Deep (mode)"),
 				model("rush", "Rush (mode)"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "kiro",
@@ -277,6 +392,11 @@ func baseCatalog() []AgentDef {
 			FallbackModels: labels(
 				model("default", "Default (CLI config)"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "kilo",
@@ -288,6 +408,11 @@ func baseCatalog() []AgentDef {
 			FallbackModels: labels(
 				model("default", "Default (CLI config)"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "vibe",
@@ -299,6 +424,11 @@ func baseCatalog() []AgentDef {
 			FallbackModels: labels(
 				model("default", "Default (CLI config)"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "trae-cli",
@@ -310,6 +440,11 @@ func baseCatalog() []AgentDef {
 			FallbackModels: labels(
 				model("default", "Default (CLI config)"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:               "codebuddy",
@@ -327,6 +462,11 @@ func baseCatalog() []AgentDef {
 				"kimi-k2.6-ioa",
 				"minimax-m3-ioa",
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:               "reasonix",
@@ -338,6 +478,11 @@ func baseCatalog() []AgentDef {
 			Provider:         "deepseek",
 			FetchModels:      acpFetchModels([]string{"acp"}),
 			FallbackModels:   models("deepseek-v4-pro", "deepseek-v4-flash"),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 		{
 			ID:          "antigravity",
@@ -351,6 +496,11 @@ func baseCatalog() []AgentDef {
 				model("Claude Sonnet 4.6 (Thinking)", "Claude Sonnet 4.6 (Thinking)"),
 				model("GPT-OSS 120B (Medium)", "GPT-OSS 120B (Medium)"),
 			),
+			TerminalSpec: TerminalSpecHint{
+				PromptMode:   adapters.PromptModeKeystrokes,
+				OutputMode:   adapters.OutputModeNative,
+				ReadyDelayMs: 800,
+			},
 		},
 	}
 }

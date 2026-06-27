@@ -13,6 +13,8 @@ import (
 	"github.com/asthrix/openfusion/apps/runner-go/internal/discovery"
 	"github.com/asthrix/openfusion/apps/runner-go/internal/fusion"
 	"github.com/asthrix/openfusion/apps/runner-go/internal/localagents"
+	"github.com/asthrix/openfusion/apps/runner-go/internal/terminal"
+	"github.com/gorilla/websocket"
 )
 
 type Options struct {
@@ -21,6 +23,13 @@ type Options struct {
 	PermissionProfile string
 	Timeout           time.Duration
 	Config            config.Config
+	SessionManager    *terminal.SessionManager
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
 }
 
 func Serve(ctx context.Context, options Options) error {
@@ -69,6 +78,7 @@ func Serve(ctx context.Context, options Options) error {
 		}
 		req.AllowedRoots = options.Config.AllowedRoots
 		req.ToolDirs = options.Config.ToolDirs
+		req.SessionManager = options.SessionManager
 		result, err := fusion.Execute(r.Context(), req)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -76,6 +86,107 @@ func Serve(ctx context.Context, options Options) error {
 		}
 		writeJSON(w, result)
 	})
+
+	if options.SessionManager != nil {
+		mux.HandleFunc("GET /api/sessions/{id}/stream", func(w http.ResponseWriter, r *http.Request) {
+			id := r.PathValue("id")
+			session, ok := options.SessionManager.Get(id)
+			if !ok {
+				writeError(w, http.StatusNotFound, fmt.Errorf("session not found"))
+				return
+			}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+
+			scrollback := session.Scrollback()
+			if len(scrollback) > 0 {
+				_ = conn.WriteMessage(websocket.BinaryMessage, scrollback)
+			}
+
+			ch := session.Subscribe()
+			defer session.Unsubscribe(ch)
+
+			for {
+				chunk, ok := <-ch
+				if !ok {
+					return
+				}
+				if err := conn.WriteMessage(websocket.BinaryMessage, chunk); err != nil {
+					return
+				}
+			}
+		})
+
+		mux.HandleFunc("POST /api/sessions/{id}/input", func(w http.ResponseWriter, r *http.Request) {
+			id := r.PathValue("id")
+			session, ok := options.SessionManager.Get(id)
+			if !ok {
+				writeError(w, http.StatusNotFound, fmt.Errorf("session not found"))
+				return
+			}
+			var body struct {
+				Input string `json:"input"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			if len(body.Input) > 4096 {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("input too long"))
+				return
+			}
+			if err := session.Send(body.Input); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, map[string]any{"ok": true})
+		})
+
+		mux.HandleFunc("POST /api/sessions/{id}/resize", func(w http.ResponseWriter, r *http.Request) {
+			id := r.PathValue("id")
+			session, ok := options.SessionManager.Get(id)
+			if !ok {
+				writeError(w, http.StatusNotFound, fmt.Errorf("session not found"))
+				return
+			}
+			var body struct {
+				Rows int `json:"rows"`
+				Cols int `json:"cols"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			if err := session.Resize(body.Rows, body.Cols); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, map[string]any{"ok": true})
+		})
+
+		mux.HandleFunc("GET /api/sessions", func(w http.ResponseWriter, r *http.Request) {
+			sessions := options.SessionManager.List()
+			type sessionInfo struct {
+				ID        string `json:"id"`
+				AdapterID string `json:"adapterId"`
+				ModelID   string `json:"modelId"`
+				State     string `json:"state"`
+			}
+			out := make([]sessionInfo, 0, len(sessions))
+			for _, s := range sessions {
+				out = append(out, sessionInfo{
+					ID:        s.ID,
+					AdapterID: s.AdapterID,
+					ModelID:   s.ModelID,
+					State:     s.State().String(),
+				})
+			}
+			writeJSON(w, map[string]any{"sessions": out})
+		})
+	}
 
 	server := &http.Server{
 		Addr:              options.Address,
@@ -131,6 +242,9 @@ const indexHTML = `<!doctype html>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>openFusion</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
   <style>
     :root {
       color-scheme: light dark;
@@ -281,6 +395,78 @@ const indexHTML = `<!doctype html>
     .custom button { cursor: pointer; font-weight: 750; }
     .picker-side { border-left: 1px solid var(--line); background: var(--surface); padding: 16px; color: var(--muted); font-size: 13px; line-height: 1.6; }
     .error { color: var(--danger); font-size: 12px; max-width: 420px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Terminal Grid ── */
+    .term-section { margin-top: 22px; display: none; }
+    .term-section.visible { display: block; animation: fadeUp .35s ease; }
+    .term-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .term-section-head h2 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -.01em; }
+    .term-section-meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .term-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+    .term-card { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; overflow: hidden; transition: border-color .2s, box-shadow .2s; display: flex; flex-direction: column; }
+    .term-card:hover { border-color: var(--line-strong); box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+    .term-card.running { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+    .term-card.running .term-card-head { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, var(--surface)), var(--surface)); }
+    .term-card.completed { border-color: color-mix(in srgb, var(--accent-2) 30%, var(--line)); }
+    .term-card.failed { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
+    .term-card-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface); transition: background .2s; }
+    .term-badge { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; font-size: 11px; font-weight: 900; color: #fff; flex-shrink: 0; background: #6366f1; }
+    .term-badge.opencode { background: #0891b2; }
+    .term-badge.codex { background: #059669; }
+    .term-badge.claude { background: #d97706; }
+    .term-badge.gemini { background: #4285f4; }
+    .term-badge.pi { background: #8b5cf6; }
+    .term-badge.aider { background: #dc2626; }
+    .term-badge.copilot { background: #6366f1; }
+    .term-badge.deepseek { background: #1e40af; }
+    .term-badge.kimi { background: #7c3aed; }
+    .term-badge.grok-build { background: #18181b; }
+    .term-badge.cursor-agent { background: #0ea5e9; }
+    .term-badge.qwen { background: #6d28d9; }
+    .term-badge.qoder { background: #db2777; }
+    .term-badge.amp { background: #16a34a; }
+    .term-badge.kiro { background: #0d9488; }
+    .term-badge.kilo { background: #b45309; }
+    .term-badge.vibe { background: #f97316; }
+    .term-badge.trae-cli { background: #2563eb; }
+    .term-badge.codebuddy { background: #9333ea; }
+    .term-badge.reasonix { background: #1e3a8a; }
+    .term-badge.antigravity { background: #be185d; }
+    .term-badge.hermes { background: #c026d3; }
+    .term-badge.devin { background: #4f46e5; }
+    .term-info { flex: 1; min-width: 0; }
+    .term-model { font-size: 13px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .term-adapter { font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 1px; }
+    .term-status { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; flex-shrink: 0; }
+    .term-status.running { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+    .term-status.completed { background: color-mix(in srgb, var(--accent-2) 15%, transparent); color: var(--accent-2); }
+    .term-status.failed { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+    .term-status.cancelled { background: var(--chip-bg); color: var(--muted); }
+    .term-status.extracting { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+    .term-pulse { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.7); } }
+    .term-body { background: #0c0c0f; position: relative; min-height: 180px; transition: height .3s ease; }
+    .term-body.expanded { min-height: 420px; }
+    .term-body .xterm { padding: 8px 10px; }
+    .term-body .xterm-viewport { background: transparent !important; }
+    .term-shimmer { position: absolute; inset: 0; display: grid; place-items: center; color: #52525b; font-size: 12px; font-weight: 600; gap: 8px; }
+    .term-shimmer .dots { display: flex; gap: 4px; }
+    .term-shimmer .dots span { width: 6px; height: 6px; border-radius: 50%; background: #3f3f46; animation: bounce 1.4s ease-in-out infinite; }
+    .term-shimmer .dots span:nth-child(2) { animation-delay: .2s; }
+    .term-shimmer .dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce { 0%, 80%, 100% { transform: scale(.6); opacity: .4; } 40% { transform: scale(1); opacity: 1; } }
+    .term-foot { display: flex; align-items: center; justify-content: space-between; padding: 7px 14px; border-top: 1px solid var(--line); background: var(--surface); font-size: 11px; color: var(--muted); font-weight: 600; }
+    .term-foot-left { display: flex; gap: 10px; align-items: center; }
+    .term-conf { font-weight: 700; }
+    .term-conf.high { color: var(--accent-2); }
+    .term-conf.medium { color: var(--accent); }
+    .term-conf.low { color: var(--danger); }
+    .term-expand { border: 0; background: transparent; color: var(--soft); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: background .15s, color .15s; }
+    .term-expand:hover { background: var(--hover-bg); color: var(--text); }
+    .term-empty { text-align: center; padding: 40px 20px; color: var(--soft); font-size: 13px; font-weight: 600; border: 1px dashed var(--line-strong); border-radius: 10px; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .term-card { animation: fadeUp .3s ease; }
+
     @media (max-width: 900px) {
       .app { grid-template-columns: 1fr; }
       .rail { display: none; }
@@ -288,6 +474,7 @@ const indexHTML = `<!doctype html>
       .options, .output { grid-template-columns: 1fr; }
       .picker { grid-template-columns: 1fr; }
       .picker-side { display: none; }
+      .term-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -329,6 +516,14 @@ const indexHTML = `<!doctype html>
             <div class="panel"><h2>Trace</h2><div id="trace"></div></div>
             <div class="panel"><h2>Final Output</h2><pre id="finalAnswer"></pre></div>
           </div>
+          <div id="termSection" class="term-section">
+            <div class="term-section-head">
+              <h2>Live Terminals</h2>
+              <div class="term-section-meta"><span id="termCount">0 sessions</span></div>
+            </div>
+            <div id="termGrid" class="term-grid"></div>
+            <div id="termEmpty" class="term-empty">No active terminal sessions. Run a fusion to see live PTY terminals.</div>
+          </div>
         </div>
       </section>
     </main>
@@ -338,7 +533,7 @@ const indexHTML = `<!doctype html>
       <div class="picker-main">
         <div class="picker-head"><input id="modelSearch" placeholder="Search models" /><button id="closePicker">×</button></div>
         <div id="modelsList" class="models"></div>
-        <div class="custom"><select id="customAdapter"><option value="opencode">OpenCode</option><option value="codex">Codex</option></select><input id="customModel" placeholder="provider/model or model-id" /><button id="addCustom">Add</button></div>
+        <div class="custom"><select id="customAdapter"><option value="opencode">OpenCode</option><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="gemini">Gemini</option><option value="pi">Pi</option><option value="aider">Aider</option><option value="copilot">Copilot</option><option value="deepseek">DeepSeek</option><option value="kimi">Kimi</option><option value="qwen">Qwen</option><option value="qoder">Qoder</option><option value="grok-build">Grok</option><option value="cursor-agent">Cursor</option><option value="amp">Amp</option><option value="hermes">Hermes</option><option value="devin">Devin</option><option value="kiro">Kiro</option><option value="kilo">Kilo</option><option value="vibe">Vibe</option><option value="trae-cli">Trae</option><option value="codebuddy">Codebuddy</option><option value="reasonix">Reasonix</option><option value="antigravity">Antigravity</option></select><input id="customModel" placeholder="model-id" /><button id="addCustom">Add</button></div>
       </div>
       <aside class="picker-side"><strong id="pickerTitle">Panel models</strong><p id="pickerHelp">Choose the analysis models that should answer independently.</p><p>Use OpenCode for provider-qualified IDs and Codex for Codex CLI model IDs. Custom IDs are sent as process arguments, not shell strings.</p></aside>
     </div>
@@ -346,22 +541,20 @@ const indexHTML = `<!doctype html>
   <script>
     const state = { models: [], tools: [], mode: 'required', analysis: [], judge: '', target: 'analysis', custom: [] };
     const modes = ['auto', 'required', 'direct'];
-    const adapters = { opencode: 'OpenCode', codex: 'Codex' };
+    const adapterLabels = { opencode: 'OpenCode', codex: 'Codex', claude: 'Claude Code', gemini: 'Gemini', pi: 'Pi', aider: 'Aider', 'cursor-agent': 'Cursor', qwen: 'Qwen', qoder: 'Qoder', copilot: 'Copilot', deepseek: 'DeepSeek', kimi: 'Kimi', hermes: 'Hermes', devin: 'Devin', 'grok-build': 'Grok', amp: 'Amp', kiro: 'Kiro', kilo: 'Kilo', vibe: 'Vibe', 'trae-cli': 'Trae', codebuddy: 'Codebuddy', reasonix: 'Reasonix', antigravity: 'Antigravity' };
     const $ = (id) => document.getElementById(id);
     const short = (m) => (m.displayName || m.model || m.id || '').split('/').pop();
     const validCustom = (value) => /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,199}$/.test(value.trim());
     function allModels() {
       const map = new Map();
       [...state.models, ...state.custom].forEach((model) => map.set(model.id, model));
-      return [...map.values()].filter((m) => m.adapter === 'opencode' || m.adapter === 'codex')
-        .sort((a, b) => a.adapter.localeCompare(b.adapter) || a.model.localeCompare(b.model));
+      return [...map.values()].sort((a, b) => (a.adapter || '').localeCompare(b.adapter || '') || (a.model || '').localeCompare(b.model || ''));
     }
     function byId(id) { return allModels().find((m) => m.id === id); }
     function defaultPick() {
       const available = allModels().filter((m) => m.availability !== 'unavailable');
       state.analysis = available.slice(0, Math.min(3, available.length)).map((m) => m.id);
-      const codex = available.find((m) => m.adapter === 'codex');
-      state.judge = (codex || available[0] || {}).id || '';
+      state.judge = (available[0] || {}).id || '';
     }
     function render() {
       $('modes').innerHTML = modes.map((mode) => '<button class="pill ' + (state.mode === mode ? 'active' : '') + '" data-mode="' + mode + '">' + mode + '</button>').join('');
@@ -392,7 +585,9 @@ const indexHTML = `<!doctype html>
       const q = $('modelSearch').value.trim().toLowerCase();
       const selected = new Set(selectedIds());
       $('modelsList').innerHTML = allModels().filter((m) => ((m.displayName || '') + ' ' + m.model + ' ' + m.adapter + ' ' + (m.provider || '')).toLowerCase().includes(q)).map((m) => {
-        return '<button class="model-option ' + (selected.has(m.id) ? 'selected' : '') + '" data-model="' + m.id + '"><span class="badge">' + (m.adapter === 'codex' ? 'C' : 'O') + '</span><span class="model-copy"><span class="model-name">' + (m.displayName || m.model) + '</span><span class="model-sub">' + adapters[m.adapter] + ' · ' + (m.provider || 'local') + ' · ' + m.availability.replaceAll('_', ' ') + '</span></span></button>';
+        const label = adapterLabels[m.adapter] || m.adapter;
+        const initial = (m.adapter || '?')[0].toUpperCase();
+        return '<button class="model-option ' + (selected.has(m.id) ? 'selected' : '') + '" data-model="' + m.id + '"><span class="badge term-badge ' + m.adapter + '">' + initial + '</span><span class="model-copy"><span class="model-name">' + (m.displayName || m.model) + '</span><span class="model-sub">' + label + ' · ' + (m.provider || 'local') + ' · ' + (m.availability || '').replaceAll('_', ' ') + '</span></span></button>';
       }).join('');
       $('modelsList').querySelectorAll('[data-model]').forEach((button) => button.onclick = () => selectModel(button.dataset.model));
     }
@@ -426,7 +621,11 @@ const indexHTML = `<!doctype html>
       $('runButton').disabled = true;
       $('runButton').textContent = '…';
       $('output').classList.add('visible');
-      $('trace').innerHTML = '<div class="trace-item"><div class="trace-title"><span>Running fusion pipeline</span><span>queued</span></div><div class="trace-meta">Panel calls run first, then one judge / synthesis call writes the final output.</div></div>';
+      $('termSection').classList.add('visible');
+      $('termEmpty').style.display = 'block';
+      $('termGrid').innerHTML = '';
+      Object.keys(terminals).forEach(function(id) { if (terminals[id].ws) terminals[id].ws.close(); delete terminals[id]; });
+      $('trace').innerHTML = '<div class="trace-item"><div class="trace-title"><span>Running fusion pipeline</span><span class="trace-status running"><span class="trace-spinner"></span>running</span></div><div class="trace-meta">Panel calls run first, then one judge / synthesis call writes the final output.</div></div>';
       $('finalAnswer').textContent = '';
       try {
         const response = await fetch('/api/fuse', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
@@ -453,7 +652,9 @@ const indexHTML = `<!doctype html>
       let roleLabel = output.role || '';
       const knownLenses = ['correctness','performance','security','maintainability','pragmatism'];
       if (knownLenses.includes(roleLabel)) roleLabel = 'lens: ' + roleLabel;
-      return '<div class="trace-item"><div class="trace-title"><span>' + roleLabel + ' · ' + output.modelId + '</span><span>' + output.status + '</span></div><div class="trace-meta">' + output.adapter + ' · ' + (output.latencyMs || 0) + 'ms</div>' + (output.error ? '<div class="trace-error">' + output.error + '</div>' : '') + '</div>';
+      const statusClass = output.status || 'queued';
+      const spinner = statusClass === 'running' ? '<span class="trace-spinner"></span>' : '';
+      return '<div class="trace-item"><div class="trace-title"><span>' + roleLabel + ' · ' + output.modelId + '</span><span class="trace-status ' + statusClass + '">' + spinner + output.status + '</span></div><div class="trace-meta">' + output.adapter + ' · ' + (output.latencyMs || 0) + 'ms</div>' + (output.error ? '<div class="trace-error">' + output.error + '</div>' : '') + '</div>';
     }
     function confidenceBadge(confidence) {
       const label = confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low';
@@ -502,13 +703,134 @@ const indexHTML = `<!doctype html>
       const adapter = $('customAdapter').value;
       const model = $('customModel').value.trim();
       if (!validCustom(model)) { $('error').textContent = 'Invalid custom model ID'; return; }
-      const item = { id: adapter + '/' + model, adapter, provider: adapter === 'codex' ? 'openai' : (model.includes('/') ? model.split('/')[0] : adapter), model, displayName: model, authMode: 'cli_session', availability: 'configured_unverified', source: 'custom', capabilities: { streaming: true, tools: true, fileEdits: true, shell: true, jsonOutput: true, modelListing: false } };
+      const item = { id: adapter + '/' + model, adapter, provider: model.includes('/') ? model.split('/')[0] : adapter, model, displayName: model, authMode: 'cli_session', availability: 'configured_unverified', source: 'custom', capabilities: { streaming: true, tools: true, fileEdits: true, shell: true, jsonOutput: true, modelListing: false } };
       state.custom = [...state.custom.filter((m) => m.id !== item.id), item];
       $('customModel').value = '';
       selectModel(item.id);
     };
     $('runButton').onclick = runFusion;
     $('prompt').addEventListener('keydown', (event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') runFusion(); });
+
+    /* ── Live Terminal Cards ── */
+    const terminals = {};
+    const adapterColors = { opencode: '#0891b2', codex: '#059669', claude: '#d97706', gemini: '#4285f4', pi: '#8b5cf6', aider: '#dc2626', copilot: '#6366f1', deepseek: '#1e40af', kimi: '#7c3aed', 'grok-build': '#18181b', 'cursor-agent': '#0ea5e9', qwen: '#6d28d9', qoder: '#db2777', amp: '#16a34a', kiro: '#0d9488', kilo: '#b45309', vibe: '#f97316', 'trae-cli': '#2563eb', codebuddy: '#9333ea', reasonix: '#1e3a8a', antigravity: '#be185d', hermes: '#c026d3', devin: '#4f46e5' };
+
+    function createTerminalCard(session) {
+      const id = session.id;
+      if (terminals[id]) return terminals[id];
+
+      const adapter = session.adapterId || 'agent';
+      const model = session.modelId || 'model';
+      const label = adapterLabels[adapter] || adapter;
+      const initial = adapter[0].toUpperCase();
+
+      const card = document.createElement('div');
+      card.className = 'term-card running';
+      card.dataset.sessionId = id;
+
+      card.innerHTML =
+        '<div class="term-card-head">' +
+          '<div class="term-badge ' + adapter + '">' + initial + '</div>' +
+          '<div class="term-info">' +
+            '<div class="term-model">' + model + '</div>' +
+            '<div class="term-adapter">' + label + '</div>' +
+          '</div>' +
+          '<span class="term-status running"><span class="term-pulse"></span>Running</span>' +
+        '</div>' +
+        '<div class="term-body">' +
+          '<div class="term-shimmer"><div class="dots"><span></span><span></span><span></span></div>waiting for output</div>' +
+        '</div>' +
+        '<div class="term-foot">' +
+          '<div class="term-foot-left">' +
+            '<span class="term-latency">—</span>' +
+            '<span class="term-strategy"></span>' +
+          '</div>' +
+          '<button class="term-expand" title="Expand">⤢</button>' +
+        '</div>';
+
+      $('termGrid').appendChild(card);
+      $('termEmpty').style.display = 'none';
+      $('termSection').classList.add('visible');
+
+      const bodyEl = card.querySelector('.term-body');
+      const shimmerEl = card.querySelector('.term-shimmer');
+      const statusEl = card.querySelector('.term-status');
+      const latencyEl = card.querySelector('.term-latency');
+      const strategyEl = card.querySelector('.term-strategy');
+      const expandBtn = card.querySelector('.term-expand');
+
+      let term = null, fitAddon = null, ws = null, hasOutput = false;
+
+      if (typeof Terminal !== 'undefined') {
+        term = new Terminal({ cursorBlink: true, fontSize: 12, fontFamily: 'Menlo, Monaco, "Courier New", monospace', scrollback: 5000, allowProposedApi: false, theme: { background: '#0c0c0f', foreground: '#e4e4e7', cursor: '#67e8f9' } });
+        fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(bodyEl);
+        fitAddon.fit();
+
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(proto + '//' + location.host + '/api/sessions/' + id + '/stream');
+        ws.binaryType = 'arraybuffer';
+        ws.onmessage = function(e) {
+          if (!hasOutput) { hasOutput = true; shimmerEl.style.display = 'none'; }
+          term.write(new Uint8Array(e.data));
+        };
+        ws.onclose = function() {
+          if (hasOutput) term.write('\r\n\x1b[90m[session ended]\x1b[0m\r\n');
+          updateStatus('completed');
+        };
+        ws.onerror = function() { shimmerEl.textContent = 'connection error'; };
+
+        term.onData(function(data) {
+          fetch('/api/sessions/' + id + '/input', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ input: data }) });
+        });
+
+        expandBtn.onclick = function() {
+          bodyEl.classList.toggle('expanded');
+          expandBtn.textContent = bodyEl.classList.contains('expanded') ? '⤡' : '⤢';
+          setTimeout(function() { if (fitAddon) fitAddon.fit(); }, 50);
+        });
+
+        window.addEventListener('resize', function() { if (fitAddon) fitAddon.fit(); });
+      } else {
+        shimmerEl.textContent = 'xterm.js not loaded';
+      }
+
+      function updateStatus(state, meta) {
+        card.classList.remove('running', 'completed', 'failed', 'cancelled', 'extracting');
+        card.classList.add(state);
+        const pulse = state === 'running' || state === 'extracting' ? '<span class="term-pulse"></span>' : '';
+        const label = state.charAt(0).toUpperCase() + state.slice(1);
+        statusEl.innerHTML = pulse + label;
+        statusEl.className = 'term-status ' + state;
+        if (meta) {
+          if (meta.latency !== undefined) latencyEl.textContent = meta.latency + 'ms';
+          if (meta.strategy) strategyEl.textContent = '· ' + meta.strategy;
+          if (meta.confidence !== undefined) {
+            const conf = meta.confidence;
+            const cls = conf >= 0.7 ? 'high' : conf >= 0.4 ? 'medium' : 'low';
+            strategyEl.innerHTML = '· <span class="term-conf ' + cls + '">' + Math.round(conf * 100) + '%</span>';
+          }
+        }
+      }
+
+      terminals[id] = { card, term, ws, updateStatus };
+      return terminals[id];
+    }
+
+    function loadSessions() {
+      fetch('/api/sessions').then(function(r) { return r.json(); }).then(function(body) {
+        const sessions = body.sessions || [];
+        $('termCount').textContent = sessions.length + ' session' + (sessions.length !== 1 ? 's' : '');
+        sessions.forEach(function(s) {
+          if (!terminals[s.id] && (s.state === 'running' || s.state === 'created')) {
+            createTerminalCard(s);
+          }
+        });
+      }).catch(function() {});
+    }
+    setInterval(loadSessions, 2000);
+
     loadModels().catch((err) => { $('error').textContent = err.message || String(err); });
   </script>
 </body>

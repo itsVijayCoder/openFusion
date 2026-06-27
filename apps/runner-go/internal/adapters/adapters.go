@@ -58,6 +58,51 @@ type Adapter interface {
 	Run(ctx context.Context, input RunInput, emit func(RunEvent)) (*RunResult, error)
 }
 
+// TerminalAdapter is implemented by adapters that can run in a real PTY
+// terminal session. When the fusion pipeline has a SessionManager available,
+// it prefers SessionSpec over Run (T1/T2 execution). Adapters that don't
+// implement this interface fall back to Run (T3 headless capture).
+type TerminalAdapter interface {
+	Adapter
+	SessionSpec(input RunInput) (TerminalSessionSpec, error)
+}
+
+// PromptMode determines how the prompt is delivered to the CLI.
+type PromptMode int
+
+const (
+	PromptModeKeystrokes PromptMode = iota
+	PromptModeFlag
+	PromptModeStdin
+)
+
+// OutputMode determines how the CLI's output is interpreted.
+type OutputMode int
+
+const (
+	OutputModeNative OutputMode = iota
+	OutputModeJSON
+	OutputModePlain
+)
+
+// TerminalSessionSpec describes how to launch a CLI inside a PTY terminal
+// session. The generic terminal adapter builds this from the catalog hint.
+type TerminalSessionSpec struct {
+	Binary     string
+	Args       []string
+	Env        map[string]string
+	WorkingDir string
+	PromptMode PromptMode
+	PromptFlag string
+	PromptText string
+	Model      string
+	ModelFlag  string
+	OutputMode OutputMode
+	TimeoutMs  int
+	Rows       int
+	Cols       int
+}
+
 type DetectionResult struct {
 	Tool     string `json:"tool"`
 	Found    bool   `json:"found"`

@@ -55,3 +55,24 @@ export type RunnerEvent = {
 export type RunEvent = RunnerEvent & {
   seq: number;
 };
+
+/**
+ * panel.terminal.delta payload contract.
+ *
+ * In T3 (headless capture) mode, data carries:
+ *   { stream: "stdout" | "stderr", text: string }
+ *
+ * In T1/T2 (real PTY terminal session) mode, data carries:
+ *   { sessionId: string, bytes: string (base64), text?: string }
+ *
+ * The sessionId links a terminal delta to a live PTY session that can be
+ * attached to via the session WebSocket endpoints. The bytes field contains
+ * base64-encoded raw PTY output (ANSI, cursor control, colors) for xterm.js
+ * rendering. The text field is optional and provides a plain-text fallback.
+ */
+export type PanelTerminalDeltaData = {
+  stream?: string;
+  text?: string;
+  sessionId?: string;
+  bytes?: string;
+};

@@ -12,8 +12,10 @@ import (
 	"github.com/asthrix/openfusion/apps/runner-go/internal/adapters"
 	"github.com/asthrix/openfusion/apps/runner-go/internal/adapters/codex"
 	"github.com/asthrix/openfusion/apps/runner-go/internal/adapters/opencode"
+	terminaladapter "github.com/asthrix/openfusion/apps/runner-go/internal/adapters/terminal"
 	contextpkg "github.com/asthrix/openfusion/apps/runner-go/internal/context"
 	"github.com/asthrix/openfusion/apps/runner-go/internal/localagents"
+	"github.com/asthrix/openfusion/apps/runner-go/internal/terminal"
 )
 
 type Request struct {
@@ -34,6 +36,9 @@ type Request struct {
 	// ProjectContext is an optional pre-rendered project context bundle. When
 	// empty, Execute gathers it from WorkspacePath (sidecar, zero tokens).
 	ProjectContext string `json:"-"`
+	// SessionManager enables real PTY terminal sessions (T1/T2). When nil,
+	// the pipeline falls back to headless capture (T3).
+	SessionManager *terminal.SessionManager `json:"-"`
 }
 
 type Result struct {
@@ -281,6 +286,18 @@ func runSelectedModel(ctx context.Context, req Request, selected selectedModel, 
 		}
 	}
 
+	start := time.Now()
+
+	// T1/T2 path: use a real PTY terminal session when a SessionManager is
+	// available. The generic terminal adapter builds the spec from the
+	// catalog hint — no per-CLI Go code needed.
+	if req.SessionManager != nil && req.SessionManager.Available() {
+		if output, ok := runViaTerminalSession(ctx, req, selected, prompt, role, start); ok {
+			return output
+		}
+	}
+
+	// T3 fallback: headless capture via adapter.Run (existing path).
 	input := adapters.RunInput{
 		RunID:             req.RunID,
 		JobID:             role + ":" + selected.ID,
@@ -332,13 +349,107 @@ func runSelectedModel(ctx context.Context, req Request, selected selectedModel, 
 	return output
 }
 
+// runViaTerminalSession creates a real PTY terminal session for the selected
+// model and waits for extraction. Returns (output, true) on success or
+// (zero, false) if the terminal path is not available for this adapter.
+func runViaTerminalSession(ctx context.Context, req Request, selected selectedModel, prompt string, role string, start time.Time) (ModelOutput, bool) {
+	agentDef := localagents.FindByID(selected.Adapter)
+	if agentDef == nil {
+		return ModelOutput{}, false
+	}
+
+	genericAdapter := terminaladapter.GenericTerminalAdapter{
+		AgentDef:     *agentDef,
+		AllowedRoots: req.AllowedRoots,
+		ToolDirs:     req.ToolDirs,
+	}
+
+	input := adapters.RunInput{
+		RunID:             req.RunID,
+		JobID:             role + ":" + selected.ID,
+		WorkspacePath:     req.WorkspacePath,
+		Prompt:            prompt,
+		Model:             modelArg(selected.Model),
+		PermissionProfile: req.PermissionProfile,
+		Env:               req.Env,
+		TimeoutMs:         req.TimeoutMs,
+	}
+
+	sessionSpec, err := genericAdapter.SessionSpec(input)
+	if err != nil {
+		return ModelOutput{
+			ModelID: selected.ID,
+			Adapter: selected.Adapter,
+			Model:   selected.Model,
+			Role:    role,
+			Status:  "failed",
+			Error:   err.Error(),
+		}, true
+	}
+
+	spec := terminal.SessionSpec{
+		ID:           terminal.BuildSessionID(req.RunID, role+":"+selected.ID),
+		RunID:        req.RunID,
+		JobID:        role + ":" + selected.ID,
+		AdapterID:    selected.Adapter,
+		ModelID:      selected.Model,
+		Binary:       sessionSpec.Binary,
+		Args:         sessionSpec.Args,
+		Env:          sessionSpec.Env,
+		WorkingDir:   sessionSpec.WorkingDir,
+		AllowedRoots: req.AllowedRoots,
+		PromptMode:   terminal.PromptMode(sessionSpec.PromptMode),
+		PromptFlag:   sessionSpec.PromptFlag,
+		PromptText:   sessionSpec.PromptText,
+		ModelFlag:    sessionSpec.ModelFlag,
+		Model:        sessionSpec.Model,
+		TimeoutMs:    sessionSpec.TimeoutMs,
+		Rows:         sessionSpec.Rows,
+		Cols:         sessionSpec.Cols,
+	}
+
+	session, err := req.SessionManager.Create(ctx, spec)
+	if err != nil {
+		return ModelOutput{
+			ModelID: selected.ID,
+			Adapter: selected.Adapter,
+			Model:   selected.Model,
+			Role:    role,
+			Status:  "failed",
+			Error:   err.Error(),
+		}, true
+	}
+
+	result := <-session.Wait()
+
+	output := ModelOutput{
+		ModelID:    selected.ID,
+		Adapter:    selected.Adapter,
+		Model:      selected.Model,
+		Role:       role,
+		Status:     "completed",
+		OutputText: strings.TrimSpace(result.Answer),
+		LatencyMs:  time.Since(start).Milliseconds(),
+	}
+
+	if result.Confidence < 0.5 && output.Error == "" {
+		output.Error = fmt.Sprintf("low extraction confidence (%.2f via %s)", result.Confidence, result.Strategy)
+	}
+
+	if result.Answer == "" && len(result.Warnings) > 0 {
+		output.Status = "failed"
+		if output.Error == "" {
+			output.Error = strings.Join(result.Warnings, "; ")
+		}
+	}
+
+	return output, true
+}
+
 func defaultAnalysisModels(ctx context.Context, allowedRoots []string, toolDirs []string) []string {
 	models := localagents.ListModels(ctx, allowedRoots, toolDirs)
 	supported := make([]string, 0, len(models))
 	for _, model := range models {
-		if model.Adapter != "opencode" && model.Adapter != "codex" {
-			continue
-		}
 		if model.Availability == "unavailable" || model.AuthMode == "unknown" {
 			continue
 		}
@@ -371,8 +482,16 @@ func resolveModel(raw string, fallbackAdapter string) selectedModel {
 	return selectedModel{ID: adapter + "/" + trimmed, Adapter: adapter, Model: trimmed}
 }
 
+// isRunnableAdapter returns true for all catalogued adapters. When a
+// SessionManager is available, any detected CLI can run in a terminal
+// session. The T3 fallback handles opencode and codex without a SessionManager.
 func isRunnableAdapter(adapter string) bool {
-	return adapter == "opencode" || adapter == "codex"
+	for _, def := range localagents.Catalog() {
+		if def.ID == adapter {
+			return true
+		}
+	}
+	return false
 }
 
 func modelArg(model string) string {
