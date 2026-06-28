@@ -27,7 +27,7 @@ import type { AppBindings } from "../env";
 import { getOptionalAccessIdentity, requireAccessIdentity, requireRunnerAccessIdentity } from "../services/auth";
 import { getCachedRunner, getCachedRunnersList, invalidateRunnerCache, invalidateRunnersListCache, setCachedRunner, setCachedRunnersList } from "../services/heartbeat-cache";
 import { type JobWorkMessage } from "../services/job-work";
-import { notifyRunnerSessionObject } from "../services/runner-session";
+import { notifyRunnerSessionObject, seedRunnerSessionDO } from "../services/runner-session";
 import { appendRunEvent } from "../services/runs";
 
 export const runnerRoutes = new Hono<AppBindings>()
@@ -68,6 +68,28 @@ export const runnerRoutes = new Hono<AppBindings>()
 
     // Invalidate list cache so the new runner shows up immediately
     await invalidateRunnersListCache(c.env.CONFIG_KV, principal.orgId);
+
+    // Seed the RunnerSessionDO with runner metadata so future heartbeats
+    // can be served entirely from DO storage without D1 reads.
+    await seedRunnerSessionDO(c.env, {
+      id: runner.id,
+      orgId: runner.orgId,
+      name: runner.name,
+      os: runner.os,
+      arch: runner.arch,
+      version: runner.version,
+      capabilities: runner.capabilities as Record<string, unknown>,
+      tools: runner.tools.map((t) => ({
+        id: t.id,
+        tool: t.tool,
+        version: t.version,
+        path: t.path,
+        status: t.status,
+        metadata: t.metadata as Record<string, unknown> | undefined,
+        detectedAt: t.detectedAt,
+      })),
+      createdAt: runner.createdAt,
+    });
 
     await createAuditEvent(c.env.DB, {
       id: formatEntityId("audit", crypto.randomUUID()),
@@ -122,23 +144,40 @@ export const runnerRoutes = new Hono<AppBindings>()
     const runnerId = c.req.param("id");
     const now = new Date().toISOString();
 
-    // Strategy: avoid the expensive getRunner() → SELECT * FROM installed_tools
-    // on every heartbeat. Instead:
-    // 1. Write the timestamp update (lightweight, 1 write)
-    // 2. Try KV cache first — if hit, serve cached runner data
-    // 3. On cache miss (cold start / TTL expired / KV down), fall back to full getRunner()
-    // 4. Populate KV cache for next heartbeat
+    // Strategy:
+    // 1. Write timestamp to D1 for offline detection (1 write)
+    // 2. Try RunnerSessionDO — it caches runner metadata in DO storage
+    // 3. Fall back to KV cache → D1 getRunner() only on double miss
     //
-    // This cuts per-heartbeat reads from ~300+ to ~1 for a typical runner with tools.
+    // This cuts per-heartbeat reads from ~272 to ~1 for DO-warm runners.
 
     const lite = await heartbeatRunnerLite(c.env.DB, principal.orgId, runnerId, now);
     if (!lite) {
       return c.json({ error: "Runner not found" }, 404);
     }
 
+    // Try DO-based heartbeat first — this eliminates D1 reads entirely
+    // when the DO is warm (which it is for any active runner).
+    const doResponse = await notifyRunnerSessionObject(c.env, runnerId, "/heartbeat", {
+      timestamp: now,
+    }).catch(() => null);
+
+    if (doResponse?.ok) {
+      const doRunner = await doResponse.json().catch(() => ({})) as Record<string, unknown>;
+      // If DO returned full metadata (has tools), use it directly
+      if (doRunner && "tools" in doRunner) {
+        return c.json({
+          ...doRunner,
+          status: lite.status as RunnerRef["status"],
+          lastSeenAt: lite.last_seen_at ?? now,
+          updatedAt: lite.updated_at,
+        });
+      }
+    }
+
+    // DO cold or returned minimal data — try KV cache
     const cached = await getCachedRunner(c.env.CONFIG_KV, principal.orgId, runnerId);
     if (cached) {
-      // Merge the fresh DB timestamps into the cached object
       const runner = {
         ...cached,
         status: lite.status as RunnerRef["status"],
@@ -148,10 +187,31 @@ export const runnerRoutes = new Hono<AppBindings>()
       return c.json(runner);
     }
 
-    // Cache miss — do the full read once and cache it
+    // Double miss — do the full D1 read once and populate both caches
     const runner = await getRunner(c.env.DB, principal.orgId, runnerId);
     if (runner) {
-      await setCachedRunner(c.env.CONFIG_KV, principal.orgId, runnerId, runner);
+      await Promise.allSettled([
+        setCachedRunner(c.env.CONFIG_KV, principal.orgId, runnerId, runner),
+        seedRunnerSessionDO(c.env, {
+          id: runner.id,
+          orgId: runner.orgId,
+          name: runner.name,
+          os: runner.os,
+          arch: runner.arch,
+          version: runner.version,
+          capabilities: runner.capabilities as Record<string, unknown>,
+          tools: runner.tools.map((t) => ({
+            id: t.id,
+            tool: t.tool,
+            version: t.version,
+            path: t.path,
+            status: t.status,
+            metadata: t.metadata as Record<string, unknown> | undefined,
+            detectedAt: t.detectedAt,
+          })),
+          createdAt: runner.createdAt,
+        }),
+      ]);
     }
     return c.json(runner);
   })

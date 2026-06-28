@@ -35,7 +35,33 @@ type ConnectionAttachment = {
   runnerId: string;
 };
 
+/**
+ * Lightweight runner metadata cached in DO storage.
+ * Populated on registration and synced from D1 periodically via alarm.
+ * Avoids the expensive D1 read on every heartbeat.
+ */
+export type RunnerMetadata = {
+  id: string;
+  orgId: string;
+  name: string;
+  os: string;
+  arch: string;
+  version: string;
+  capabilities: Record<string, unknown>;
+  tools: Array<{
+    id?: string;
+    tool: string;
+    version?: string | null;
+    path?: string | null;
+    status: string;
+    metadata?: Record<string, unknown>;
+    detectedAt?: string;
+  }>;
+  createdAt: string;
+};
+
 const LEASE_TAG = "ws-push";
+const ALARM_SYNC_INTERVAL_MS = 120_000; // 2 minutes — sync runner state from D1 as fallback
 
 export class RunnerSessionDO {
   constructor(
@@ -55,6 +81,30 @@ export class RunnerSessionDO {
       const now = new Date().toISOString();
       await this.state.storage.put("last_seen_at", now);
       await this.state.storage.put("last_heartbeat", body);
+
+      // Return cached runner metadata from DO storage to avoid D1 reads.
+      // The runner identity (orgId, runnerId) comes from the request header
+      // or existing DO storage. This eliminates the 34.44% D1 read problem
+      // (SELECT * FROM installed_tools) on every heartbeat.
+      const runnerMeta = await this.state.storage.get<RunnerMetadata>("runner_meta");
+      if (runnerMeta) {
+        return Response.json({
+          id: runnerMeta.id,
+          orgId: runnerMeta.orgId,
+          name: runnerMeta.name,
+          os: runnerMeta.os,
+          arch: runnerMeta.arch,
+          version: runnerMeta.version,
+          status: "online",
+          capabilities: runnerMeta.capabilities,
+          tools: runnerMeta.tools,
+          lastSeenAt: now,
+          createdAt: runnerMeta.createdAt,
+          updatedAt: now,
+        });
+      }
+
+      // Cold start fallback — DO hasn't been seeded yet, return minimal
       return Response.json({ status: "online", lastSeenAt: now, environment: this.env.ENVIRONMENT });
     }
 
@@ -95,6 +145,15 @@ export class RunnerSessionDO {
         lastSeenAt,
         queueDepth,
       });
+    }
+
+    if (url.pathname.endsWith("/seed")) {
+      const meta = (await request.json().catch(() => null)) as RunnerMetadata | null;
+      if (!meta?.id || !meta?.orgId) {
+        return Response.json({ error: "Invalid runner metadata" }, { status: 400 });
+      }
+      await this.state.storage.put("runner_meta", meta);
+      return Response.json({ status: "seeded", runnerId: meta.id });
     }
 
     return Response.json({ error: "Not found" }, { status: 404 });
@@ -335,6 +394,48 @@ export class RunnerSessionDO {
   private async queueDepth() {
     const jobs = await this.state.storage.list<ClaimedRunnerJob>({ prefix: "job:", limit: 100 });
     return jobs.size;
+  }
+
+  /**
+   * Periodically sync runner metadata from D1 into DO storage.
+   * This is the eventual-consistency fallback for when the heartbeat
+   * cache is cold or the DO was evicted. Runs every 2 minutes.
+   */
+  async alarm(): Promise<void> {
+    const meta = await this.state.storage.get<RunnerMetadata>("runner_meta");
+    if (!meta?.orgId || !meta?.id) {
+      // No seed yet — skip sync
+      await this.state.storage.setAlarm(Date.now() + ALARM_SYNC_INTERVAL_MS);
+      return;
+    }
+
+    try {
+      // Import dynamically to avoid circular dependency at module level
+      const { getRunner } = await import("@openfusion/db");
+      const runner = await getRunner(this.env.DB as D1Database, meta.orgId, meta.id);
+      if (runner) {
+        await this.state.storage.put("runner_meta", {
+          id: runner.id,
+          orgId: runner.orgId,
+          name: runner.name,
+          os: runner.os,
+          arch: runner.arch,
+          version: runner.version,
+          capabilities: runner.capabilities as unknown as Record<string, unknown>,
+          tools: runner.tools,
+          createdAt: runner.createdAt,
+        } satisfies RunnerMetadata);
+      }
+    } catch (err) {
+      console.error(JSON.stringify({
+        level: "error",
+        message: "RunnerSessionDO alarm sync failed",
+        error: String(err),
+        runnerId: meta.id,
+      }));
+    }
+
+    await this.state.storage.setAlarm(Date.now() + ALARM_SYNC_INTERVAL_MS);
   }
 }
 
