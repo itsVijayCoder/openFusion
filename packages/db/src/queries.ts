@@ -522,6 +522,29 @@ export async function heartbeatRunner(db: D1DatabaseLike, orgId: string, runnerI
   return getRunner(db, orgId, runnerId);
 }
 
+/**
+ * Lightweight heartbeat — only updates the timestamp and returns just the
+ * runner row (no tools lookup). Used when the caller has a cached runner
+ * and just needs to confirm the DB write succeeded. Saves ~90% of reads
+ * by skipping the expensive SELECT * FROM installed_tools query.
+ */
+export async function heartbeatRunnerLite(
+  db: D1DatabaseLike,
+  orgId: string,
+  runnerId: string,
+  now: string,
+): Promise<Pick<RunnerRow, "id" | "org_id" | "status" | "last_seen_at" | "updated_at"> | null> {
+  await db
+    .prepare("UPDATE runners SET status = 'online', last_seen_at = ?, updated_at = ? WHERE org_id = ? AND id = ?")
+    .bind(now, now, orgId, runnerId)
+    .run();
+
+  return db
+    .prepare("SELECT id, org_id, status, last_seen_at, updated_at FROM runners WHERE org_id = ? AND id = ?")
+    .bind(orgId, runnerId)
+    .first<Pick<RunnerRow, "id" | "org_id" | "status" | "last_seen_at" | "updated_at">>();
+}
+
 export async function listRunners(db: D1DatabaseLike, orgId: string): Promise<RunnerRef[]> {
   const now = new Date().toISOString();
   const [{ results: runnerRows }, { results: toolRows }] = await Promise.all([
